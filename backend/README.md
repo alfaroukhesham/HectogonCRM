@@ -137,4 +137,6 @@ The original monolithic `server.py` file has been refactored into:
 - **Database** → `app/core/database.py`
 - **Main App** → `app/main.py`
 
-All functionality remains the same, but the code is now more organized and maintainable. 
+All functionality remains the same, but the code is now more organized and maintainable.
+
+more functionality to come...
