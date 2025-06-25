@@ -234,10 +234,11 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Contact Management API"
-    - "Deal Management API" 
-    - "Activity Tracking API"
-    - "Dashboard Analytics API"
+    - "Contact Management Interface"
+    - "Deal Pipeline Interface" 
+    - "Activity Management Interface"
+    - "Dashboard Analytics Interface"
+    - "Navigation and Layout"
   stuck_tasks: []
   test_all: true
   test_priority: "high_first"
