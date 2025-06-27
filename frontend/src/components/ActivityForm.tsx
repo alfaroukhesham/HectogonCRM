@@ -62,7 +62,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+        <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
           {error}
         </div>
       )}
@@ -71,7 +71,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
         name="contact_id"
         value={formData.contact_id}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         required
         disabled={isSubmitting}
       >
@@ -88,7 +88,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
           name="type"
           value={formData.type}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isSubmitting}
         >
           {types.map((type) => (
@@ -101,7 +101,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
           name="priority"
           value={formData.priority}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isSubmitting}
         >
           {priorities.map((priority) => (
@@ -118,7 +118,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
         placeholder="Activity Title"
         value={formData.title}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         required
         disabled={isSubmitting}
       />
@@ -129,7 +129,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
         placeholder="Due Date"
         value={formData.due_date}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         disabled={isSubmitting}
       />
 
@@ -138,7 +138,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
         placeholder="Description"
         value={formData.description}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2 h-20"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
         disabled={isSubmitting}
       />
 
@@ -146,14 +146,14 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+          className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           disabled={isSubmitting}
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 transition-colors shadow-md hover:shadow-lg"
           disabled={isSubmitting}
         >
           {isSubmitting ? 'Saving...' : (activity?.id ? 'Update' : 'Create')} Activity
@@ -163,4 +163,4 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
   );
 };
 
-export default ActivityForm; 
+export default ActivityForm;

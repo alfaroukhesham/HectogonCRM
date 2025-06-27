@@ -31,14 +31,14 @@ export const formatDateTime = (dateString: string | undefined): string => {
  */
 export const getStageColor = (stage: DealStage): string => {
   const colors: Record<DealStage, string> = {
-    Lead: 'bg-gray-100 text-gray-800',
-    Qualified: 'bg-blue-100 text-blue-800',
-    Proposal: 'bg-yellow-100 text-yellow-800',
-    Negotiation: 'bg-orange-100 text-orange-800',
-    'Closed Won': 'bg-green-100 text-green-800',
-    'Closed Lost': 'bg-red-100 text-red-800',
+    Lead: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200',
+    Qualified: 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200',
+    Proposal: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
+    Negotiation: 'bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200',
+    'Closed Won': 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200',
+    'Closed Lost': 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200',
   };
-  return colors[stage] || 'bg-gray-100 text-gray-800';
+  return colors[stage] || 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
 };
 
 /**
@@ -46,11 +46,11 @@ export const getStageColor = (stage: DealStage): string => {
  */
 export const getPriorityColor = (priority: ActivityPriority): string => {
   const colors: Record<ActivityPriority, string> = {
-    Low: 'bg-green-100 text-green-800',
-    Medium: 'bg-yellow-100 text-yellow-800',
-    High: 'bg-red-100 text-red-800',
+    Low: 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200',
+    Medium: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
+    High: 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200',
   };
-  return colors[priority] || 'bg-gray-100 text-gray-800';
+  return colors[priority] || 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
 };
 
 /**
@@ -67,4 +67,4 @@ export const getInitials = (firstName: string, lastName: string): string => {
   const firstInitial = firstName.charAt(0).toUpperCase();
   const lastInitial = lastName.charAt(0).toUpperCase();
   return `${firstInitial}${lastInitial}`;
-}; 
+};

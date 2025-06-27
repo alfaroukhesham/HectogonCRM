@@ -51,7 +51,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+        <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
           {error}
         </div>
       )}
@@ -63,7 +63,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
           placeholder="First Name"
           value={formData.first_name}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           required
           disabled={isSubmitting}
         />
@@ -73,7 +73,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
           placeholder="Last Name"
           value={formData.last_name}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           required
           disabled={isSubmitting}
         />
@@ -85,7 +85,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
         placeholder="Email"
         value={formData.email}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         required
         disabled={isSubmitting}
       />
@@ -96,7 +96,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
         placeholder="Phone"
         value={formData.phone}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         disabled={isSubmitting}
       />
       
@@ -107,7 +107,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
           placeholder="Company"
           value={formData.company}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isSubmitting}
         />
         <input
@@ -116,7 +116,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
           placeholder="Position"
           value={formData.position}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isSubmitting}
         />
       </div>
@@ -127,7 +127,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
         placeholder="Address"
         value={formData.address}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         disabled={isSubmitting}
       />
       
@@ -136,7 +136,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
         placeholder="Notes"
         value={formData.notes}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2 h-20"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
         disabled={isSubmitting}
       />
       
@@ -144,14 +144,14 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+          className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           disabled={isSubmitting}
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md hover:shadow-lg"
           disabled={isSubmitting}
         >
           {isSubmitting ? 'Saving...' : (contact?.id ? 'Update' : 'Create')} Contact
@@ -161,4 +161,4 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
   );
 };
 
-export default ContactForm; 
+export default ContactForm;

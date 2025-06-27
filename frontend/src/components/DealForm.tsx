@@ -69,7 +69,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+        <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
           {error}
         </div>
       )}
@@ -80,7 +80,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
         placeholder="Deal Title"
         value={formData.title}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         required
         disabled={isSubmitting}
       />
@@ -89,7 +89,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
         name="contact_id"
         value={formData.contact_id}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         required
         disabled={isSubmitting}
       >
@@ -108,7 +108,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
           placeholder="Deal Value"
           value={formData.value}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           required
           min="0"
           step="0.01"
@@ -118,7 +118,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
           name="stage"
           value={formData.stage}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isSubmitting}
         >
           {stages.map((stage) => (
@@ -138,7 +138,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
           placeholder="Probability %"
           value={formData.probability}
           onChange={handleNumberChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isSubmitting}
         />
         <input
@@ -147,7 +147,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
           placeholder="Expected Close Date"
           value={formData.expected_close_date}
           onChange={handleInputChange}
-          className="border border-gray-300 rounded px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isSubmitting}
         />
       </div>
@@ -157,7 +157,7 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
         placeholder="Description"
         value={formData.description}
         onChange={handleInputChange}
-        className="w-full border border-gray-300 rounded px-3 py-2 h-20"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
         disabled={isSubmitting}
       />
 
@@ -165,14 +165,14 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+          className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           disabled={isSubmitting}
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors shadow-md hover:shadow-lg"
           disabled={isSubmitting}
         >
           {isSubmitting ? 'Saving...' : (deal?.id ? 'Update' : 'Create')} Deal
@@ -182,4 +182,4 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
   );
 };
 
-export default DealForm; 
+export default DealForm;
