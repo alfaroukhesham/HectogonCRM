@@ -43,7 +43,7 @@ const Navigation: React.FC = () => {
           </div>
           
           {/* Right side with theme toggle */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-6">
             <ThemeToggle />
             <div className="hidden md:flex items-center text-sm text-gray-500 dark:text-gray-400">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
