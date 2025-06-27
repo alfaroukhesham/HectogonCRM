@@ -4,10 +4,14 @@ import { Contact, Deal, Activity, DashboardStats } from './types';
 import { apiService } from './utils/api';
 import { MainLayout, ErrorBoundary } from './components';
 import { Dashboard, Contacts, Deals, Activities } from './pages';
+import { useTheme } from './hooks/useTheme';
 import NotFound from './pages/NotFound';
 import './App.css';
 
 const App: React.FC = () => {
+  // Initialize theme
+  useTheme();
+
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -144,12 +148,12 @@ const App: React.FC = () => {
     if (!error) return null;
     
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
         <div className="flex items-center justify-between">
           <span>{error}</span>
           <button
             onClick={() => setError(null)}
-            className="text-red-700 hover:text-red-900 ml-4"
+            className="text-red-700 hover:text-red-900 ml-4 dark:text-red-400 dark:hover:text-red-300"
           >
             ✕
           </button>
@@ -288,13 +292,13 @@ const App: React.FC = () => {
             <Route path="reports">
               <Route 
                 index
-                element={<div className="p-6 text-center text-gray-500">Reports coming soon...</div>}
+                element={<div className="p-6 text-center text-gray-500 dark:text-gray-400">Reports coming soon...</div>}
               />
             </Route>
             <Route path="settings">
               <Route 
                 index
-                element={<div className="p-6 text-center text-gray-500">Settings coming soon...</div>}
+                element={<div className="p-6 text-center text-gray-500 dark:text-gray-400">Settings coming soon...</div>}
               />
             </Route>
             <Route path="*" element={<NotFound />} />
@@ -305,4 +309,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; 
+export default App;

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DashboardStats } from '@/types';
+import { DashboardStats, Activity, Contact, Deal } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
 import { StatCard, Chart, RecentActivity, QuickActions, Card } from '@/components/ui';
+import { apiService } from '@/utils/api';
 
 interface DashboardProps {
   dashboardStats: DashboardStats;
@@ -12,38 +13,39 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
+  const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
+  const [recentContacts, setRecentContacts] = useState<Contact[]>([]);
+  const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(true);
 
   useEffect(() => {
     setMounted(true);
+    loadRecentData();
   }, []);
 
-  // Mock recent activities - in a real app, this would come from props or API
-  const recentActivities = [
-    {
-      id: '1',
-      type: 'contact' as const,
-      title: 'New contact added',
-      description: 'John Smith from Acme Corp was added to contacts',
-      time: '2 hours ago',
-      user: 'You'
-    },
-    {
-      id: '2',
-      type: 'deal' as const,
-      title: 'Deal moved to negotiation',
-      description: 'Enterprise Software License deal updated',
-      time: '4 hours ago',
-      user: 'Sarah Johnson'
-    },
-    {
-      id: '3',
-      type: 'activity' as const,
-      title: 'Meeting scheduled',
-      description: 'Product demo with TechCorp next Tuesday',
-      time: '1 day ago',
-      user: 'Mike Chen'
+  const loadRecentData = async () => {
+    try {
+      setLoadingActivities(true);
+      const [activities, contacts, deals] = await Promise.all([
+        apiService.getActivities(),
+        apiService.getContacts(),
+        apiService.getDeals()
+      ]);
+      
+      // Get the 5 most recent activities
+      setRecentActivities(activities.slice(0, 5));
+      
+      // Get the 3 most recent contacts
+      setRecentContacts(contacts.slice(0, 3));
+      
+      // Get the 3 most recent deals
+      setRecentDeals(deals.slice(0, 3));
+    } catch (error) {
+      console.error('Error loading recent data:', error);
+    } finally {
+      setLoadingActivities(false);
     }
-  ];
+  };
 
   const quickActions = [
     {
@@ -79,6 +81,37 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
       onClick: () => navigate('/reports')
     }
   ];
+
+  // Transform recent activities for the RecentActivity component
+  const transformedActivities = recentActivities.map(activity => ({
+    id: activity.id,
+    type: 'activity' as const,
+    title: activity.title,
+    description: activity.description || `${activity.type} activity`,
+    time: new Date(activity.created_at).toLocaleDateString(),
+    user: 'You'
+  }));
+
+  // Add recent contacts and deals to activities
+  const allRecentItems = [
+    ...transformedActivities,
+    ...recentContacts.map(contact => ({
+      id: contact.id,
+      type: 'contact' as const,
+      title: 'New contact added',
+      description: `${contact.first_name} ${contact.last_name} from ${contact.company || 'Unknown Company'}`,
+      time: new Date(contact.created_at).toLocaleDateString(),
+      user: 'You'
+    })),
+    ...recentDeals.map(deal => ({
+      id: deal.id,
+      type: 'deal' as const,
+      title: 'Deal created',
+      description: `${deal.title} - ${formatCurrency(deal.value)}`,
+      time: new Date(deal.created_at).toLocaleDateString(),
+      user: 'You'
+    }))
+  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 5);
 
   if (isLoading) {
     return (
@@ -132,7 +165,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
     );
   }
 
-  // Prepare chart data
+  // Prepare chart data from real backend data
   const stageData = Object.entries(dashboardStats.deals_by_stage || {}).map(([stage, count], index) => ({
     label: stage,
     value: count,
@@ -146,8 +179,25 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
     ][index % 6]
   }));
 
-  // Mock trend data for stat cards
-  const trendData = [3, 7, 4, 8, 6, 9, 7, 12, 8, 11, 9, 15];
+  // Calculate trend data based on real data (mock implementation)
+  const generateTrendData = (baseValue: number) => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const variation = Math.sin(i * 0.5) * 0.3 + Math.random() * 0.2;
+      return Math.max(1, Math.round(baseValue * (1 + variation)));
+    });
+  };
+
+  // Calculate win rate
+  const wonDeals = dashboardStats.deals_by_stage?.['Closed Won'] || 0;
+  const totalDeals = dashboardStats.total_deals || 1;
+  const winRate = Math.round((wonDeals / totalDeals) * 100);
+
+  // Calculate average deal value
+  const avgDealValue = wonDeals > 0 ? dashboardStats.total_revenue / wonDeals : 0;
+
+  // Calculate hot leads (Proposal + Negotiation)
+  const hotLeads = (dashboardStats.deals_by_stage?.['Proposal'] || 0) + 
+                   (dashboardStats.deals_by_stage?.['Negotiation'] || 0);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
@@ -180,7 +230,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
             change={{ value: 12, type: 'increase' }}
             icon="👥"
             color="blue"
-            trend={trendData}
+            trend={generateTrendData(dashboardStats.total_contacts)}
           />
           <StatCard
             title="Active Deals"
@@ -188,7 +238,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
             change={{ value: 8, type: 'increase' }}
             icon="💼"
             color="green"
-            trend={trendData.map(v => v * 0.8)}
+            trend={generateTrendData(dashboardStats.total_deals)}
           />
           <StatCard
             title="Total Revenue"
@@ -196,7 +246,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
             change={{ value: 23, type: 'increase' }}
             icon="💰"
             color="purple"
-            trend={trendData.map(v => v * 1.2)}
+            trend={generateTrendData(dashboardStats.total_revenue / 1000)}
           />
           <StatCard
             title="Pipeline Value"
@@ -204,7 +254,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
             change={{ value: 5, type: 'increase' }}
             icon="📈"
             color="orange"
-            trend={trendData.map(v => v * 0.9)}
+            trend={generateTrendData(dashboardStats.pipeline_value / 1000)}
           />
         </div>
 
@@ -221,7 +271,9 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
           
           {/* Recent Activity */}
           <div>
-            <RecentActivity activities={recentActivities} />
+            <RecentActivity 
+              activities={loadingActivities ? [] : allRecentItems} 
+            />
           </div>
         </div>
 
@@ -242,7 +294,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-500/10 dark:to-blue-600/10">
                   <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {dashboardStats.deals_by_stage?.['Closed Won'] || 0}
+                    {wonDeals}
                   </div>
                   <div className="text-sm text-blue-600/80 dark:text-blue-400/80 mt-1">
                     Won Deals
@@ -251,7 +303,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
                 
                 <div className="text-center p-4 rounded-xl bg-gradient-to-br from-green-50 to-green-100 dark:from-green-500/10 dark:to-green-600/10">
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {Math.round(((dashboardStats.deals_by_stage?.['Closed Won'] || 0) / Math.max(dashboardStats.total_deals, 1)) * 100)}%
+                    {winRate}%
                   </div>
                   <div className="text-sm text-green-600/80 dark:text-green-400/80 mt-1">
                     Win Rate
@@ -260,7 +312,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
                 
                 <div className="text-center p-4 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-500/10 dark:to-purple-600/10">
                   <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {formatCurrency(dashboardStats.total_revenue / Math.max(dashboardStats.deals_by_stage?.['Closed Won'] || 1, 1))}
+                    {formatCurrency(avgDealValue)}
                   </div>
                   <div className="text-sm text-purple-600/80 dark:text-purple-400/80 mt-1">
                     Avg Deal
@@ -269,7 +321,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
                 
                 <div className="text-center p-4 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-500/10 dark:to-orange-600/10">
                   <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                    {((dashboardStats.deals_by_stage?.['Proposal'] || 0) + (dashboardStats.deals_by_stage?.['Negotiation'] || 0))}
+                    {hotLeads}
                   </div>
                   <div className="text-sm text-orange-600/80 dark:text-orange-400/80 mt-1">
                     Hot Leads
