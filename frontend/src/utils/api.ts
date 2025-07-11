@@ -358,6 +358,12 @@ class ApiClient {
       method: 'POST',
     });
   }
+  
+  async revokeInvitation(inviteId: string): Promise<void> {
+    return this.request<void>(`/invites/${inviteId}/revoke`, {
+      method: 'POST',
+    });
+  }
 
   // Membership endpoints
   async getOrganizationMembers(organizationId: string): Promise<any[]> {
