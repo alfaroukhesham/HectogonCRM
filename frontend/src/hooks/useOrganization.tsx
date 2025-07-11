@@ -144,21 +144,19 @@ export const OrganizationProvider: React.FC<OrganizationProviderProps> = ({ chil
     loadOrganizations();
   };
 
-  useEffect(() => {
-    // Add a timeout to prevent infinite loading
-    const loadingTimeout = setTimeout(() => {
-      if (isLoading) {
-        console.error('Organization loading timed out');
-        setError('Loading organizations timed out. Please try again.');
+    useEffect(() => {
+    const initializeOrganizations = async () => {
+      try {
+        await loadOrganizations();
+      } catch (error) {
+        console.error('OrganizationProvider: Critical error during initialization:', error);
+        // Set a fallback error state if loadOrganizations didn't handle it
+        setError(error instanceof Error ? error.message : 'Failed to initialize organizations');
         setIsLoading(false);
       }
-    }, 30000); // 30 second timeout
-
-    loadOrganizations();
-
-    return () => {
-      clearTimeout(loadingTimeout);
     };
+
+    initializeOrganizations();
   }, []);
 
   const value: OrganizationContextType = {
