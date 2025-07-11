@@ -1,6 +1,6 @@
 import React, { useState, FormEvent, ChangeEvent } from 'react';
-import { Activity, ActivityFormData, Contact, ActivityType, ActivityPriority } from '@/types';
-import { activitiesApi } from '@/utils/api';
+import { Activity, ActivityFormData, Contact, ActivityType, ActivityPriority } from '../types';
+import { api } from '../utils/api';
 
 interface ActivityFormProps {
   activity?: Activity | null;
@@ -46,9 +46,9 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, contacts, onSave,
       };
 
       if (activity?.id) {
-        await activitiesApi.update(activity.id, submitData);
+        await api.updateActivity(activity.id, submitData);
       } else {
-        await activitiesApi.create(submitData);
+        await api.createActivity(submitData);
       }
       onSave();
     } catch (err) {

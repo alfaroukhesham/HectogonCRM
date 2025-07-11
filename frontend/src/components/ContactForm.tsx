@@ -1,6 +1,6 @@
 import React, { useState, FormEvent, ChangeEvent } from 'react';
-import { Contact, ContactFormData } from '@/types';
-import { contactsApi } from '@/utils/api';
+import { Contact, ContactFormData } from '../types';
+import { api } from '../utils/api';
 
 interface ContactFormProps {
   contact?: Contact | null;
@@ -35,9 +35,9 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
 
     try {
       if (contact?.id) {
-        await contactsApi.update(contact.id, formData);
+        await api.updateContact(contact.id, formData);
       } else {
-        await contactsApi.create(formData);
+        await api.createContact(formData);
       }
       onSave();
     } catch (err) {

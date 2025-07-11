@@ -1,241 +1,480 @@
-import axios, { AxiosResponse, AxiosError } from 'axios';
-import {
-  Contact,
-  Deal,
+import { 
+  Contact, 
+  Deal, 
   Activity,
-  DashboardStats,
-  ContactCreateRequest,
-  ContactUpdateRequest,
-  DealCreateRequest,
-  DealUpdateRequest,
-  ActivityCreateRequest,
-  ActivityUpdateRequest,
-  ApiError,
+  Organization,
+  OrganizationCreateRequest,
+  OrganizationUpdateRequest,
+  OrganizationMembership,
+  Invitation,
+  InvitationCreateRequest,
+  MembershipRole
 } from '../types';
+import { AuthStorage } from './auth';
+import { 
+  User, 
+  AuthTokens, 
+  LoginCredentials, 
+  RegisterData, 
+  PasswordResetRequest, 
+  PasswordResetConfirm,
+  PasswordChange,
+  EmailVerificationRequest,
+  EmailVerificationConfirm,
+  OAuthProviderInfo
+} from '../types/auth';
 
-// Get the correct backend URL - default to localhost if not set
 const BACKEND_URL = (import.meta as any).env?.VITE_BACKEND_URL || 'http://localhost:8000';
+const BASE_URL = `${BACKEND_URL}/api`;
 
-const api = axios.create({
-  baseURL: `${BACKEND_URL}/api`,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 10000, // 10 second timeout
-});
+// Storage abstraction interface
+interface StorageAdapter {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
 
-// Response interceptor for error handling
-api.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError) => {
-    console.error('API Error:', error);
-    
-    if (error.response?.data) {
-      // Backend returned an error response
-      const apiError: ApiError = {
-        detail: (error.response.data as any).detail || 'An error occurred',
-        status_code: error.response.status,
-      };
-      throw apiError;
-    }
-    
-    if (error.request) {
-      // Network error
-      throw new Error('Network error: Unable to connect to the server');
-    }
-    
-    // Other error
-    throw new Error(error.message || 'An unexpected error occurred');
+// Default localStorage implementation
+class LocalStorageAdapter implements StorageAdapter {
+  getItem(key: string): string | null {
+    return localStorage.getItem(key);
   }
-);
+  
+  setItem(key: string, value: string): void {
+    localStorage.setItem(key, value);
+  }
+  
+  removeItem(key: string): void {
+    localStorage.removeItem(key);
+  }
+}
 
-// Generic API service class
-class ApiService {
-  // Contact methods
-  async getContacts(search?: string): Promise<Contact[]> {
+
+class ApiError extends Error {
+  constructor(
+    public status: number, 
+    message: string, 
+    public validationErrors?: any[]
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+class ApiClient {
+  private baseUrl: string;
+  private storage: StorageAdapter;
+  private refreshPromise: Promise<AuthTokens | null> | null = null;
+  private currentOrganizationId: string | null = null;
+
+  constructor(baseUrl: string = BASE_URL, storage: StorageAdapter = new LocalStorageAdapter()) {
+    this.baseUrl = baseUrl;
+    this.storage = storage;
+    
+    // Load current organization from storage
+    const orgId = this.storage.getItem('current_organization_id');
+    this.currentOrganizationId = orgId;
+  }
+
+  setCurrentOrganization(organizationId: string | null): void {
+    this.currentOrganizationId = organizationId;
+    if (organizationId) {
+      this.storage.setItem('current_organization_id', organizationId);
+    } else {
+      this.storage.removeItem('current_organization_id');
+    }
+  }
+
+  getCurrentOrganization(): string | null {
+    return this.currentOrganizationId;
+  }
+
+  private async refreshTokenWithLock(refreshToken: string): Promise<AuthTokens | null> {
+    // If refresh is already in progress, wait for it
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    // Start refresh process
+    this.refreshPromise = this.refreshToken(refreshToken);
+    
     try {
-      const params = search ? { search } : {};
-      const response: AxiosResponse<Contact[]> = await api.get('/contacts', { params });
-      
-      // Ensure we always return an array
-      if (!Array.isArray(response.data)) {
-        console.warn('API returned non-array data for contacts:', response.data);
-        return [];
-      }
-      
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching contacts:', error);
-      return []; // Return empty array on error to prevent crashes
+      const result = await this.refreshPromise;
+      return result;
+    } finally {
+      // Clear the promise regardless of success/failure
+      this.refreshPromise = null;
     }
   }
 
-  async getContact(id: string): Promise<Contact> {
-    const response: AxiosResponse<Contact> = await api.get(`/contacts/${id}`);
-    return response.data;
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`;
+    
+    // Get tokens from storage
+    const tokens = this.storage.getItem('auth_tokens');
+    const authTokens = tokens ? JSON.parse(tokens) : null;
+    
+    const config: RequestInit = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    };
+
+    // Add authorization header if we have an access token
+    // Exclude auth endpoints that don't need tokens (login, register, etc) but include /me and other protected auth endpoints
+    const authEndpointsThatNeedTokens = ['/auth/me', '/auth/logout', '/auth/logout-all', '/auth/change-password', '/auth/verify-email', '/auth/resend-verification'];
+    const isProtectedAuthEndpoint = authEndpointsThatNeedTokens.some(protectedEndpoint => endpoint.includes(protectedEndpoint));
+    const isPublicAuthEndpoint = endpoint.includes('/auth/') && !isProtectedAuthEndpoint;
+    
+    if (authTokens?.access_token && !isPublicAuthEndpoint) {
+      config.headers = {
+        ...config.headers,
+        Authorization: `Bearer ${authTokens.access_token}`,
+      };
+    }
+
+    // Add organization header if we have a current organization
+    if (this.currentOrganizationId && !endpoint.includes('/auth/') && !endpoint.includes('/organizations')) {
+      config.headers = {
+        ...config.headers,
+        'X-Organization-ID': this.currentOrganizationId,
+      };
+    }
+
+    // Removed debug logging
+
+    try {
+      const response = await fetch(url, config);
+      
+      // Removed debug logging
+      
+      // Handle 401 errors - try to refresh token
+      if (response.status === 401 && authTokens?.refresh_token && !endpoint.includes('/auth/refresh')) {
+        const refreshed = await this.refreshTokenWithLock(authTokens.refresh_token);
+        if (refreshed) {
+          // Retry the original request with new token
+          config.headers = {
+            ...config.headers,
+            Authorization: `Bearer ${refreshed.access_token}`,
+          };
+          const retryResponse = await fetch(url, config);
+          if (!retryResponse.ok) {
+            this.handleErrorResponse(retryResponse);
+          }
+          return retryResponse.json();
+        }
+      }
+
+      if (!response.ok) {
+        await this.handleErrorResponse(response);
+      }
+
+      return response.json();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError(0, 'Network error');
+    }
   }
 
-  async createContact(data: ContactCreateRequest): Promise<Contact> {
-    const response: AxiosResponse<Contact> = await api.post('/contacts', data);
-    return response.data;
+  private async handleErrorResponse(response: Response): Promise<never> {
+    let errorMessage = `HTTP ${response.status}`;
+    let validationErrors: any[] | undefined;
+    
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.detail || errorData.message || errorMessage;
+      
+      // Handle validation errors (HTTP 422)
+      if (response.status === 422 && errorData.detail && Array.isArray(errorData.detail)) {
+        validationErrors = errorData.detail;
+      }
+    } catch (e) {
+      // If we can't parse the error response, use the status text
+      errorMessage = response.statusText || errorMessage;
+    }
+    
+    throw new ApiError(response.status, errorMessage, validationErrors);
   }
 
-  async updateContact(id: string, data: ContactUpdateRequest): Promise<Contact> {
-    const response: AxiosResponse<Contact> = await api.put(`/contacts/${id}`, data);
-    return response.data;
+  // Authentication endpoints
+  async register(data: RegisterData): Promise<User> {
+    return this.request<User>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async login(credentials: LoginCredentials): Promise<AuthTokens> {
+    return this.request<AuthTokens>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    });
+  }
+
+  async refreshToken(refreshToken: string): Promise<AuthTokens | null> {
+    try {
+      return await this.request<AuthTokens>('/auth/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+    } catch (error) {
+      // If refresh fails, clear tokens
+      this.storage.removeItem('auth_tokens');
+      this.storage.removeItem('auth_user');
+      return null;
+    }
+  }
+
+  async logout(refreshToken?: string): Promise<void> {
+    if (refreshToken) {
+      try {
+        await this.request<void>('/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      } catch (error) {
+        console.warn('Logout API call failed:', error);
+      }
+    }
+  }
+
+  async logoutAll(): Promise<void> {
+    return this.request<void>('/auth/logout-all', {
+      method: 'POST',
+    });
+  }
+
+  async getCurrentUser(): Promise<User> {
+    return this.request<User>('/auth/me');
+  }
+
+  // Password management endpoints
+  async forgotPassword(data: PasswordResetRequest): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async resetPassword(data: PasswordResetConfirm): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async changePassword(data: PasswordChange): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Email verification endpoints
+  async verifyEmail(data: EmailVerificationConfirm): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async resendVerification(data: EmailVerificationRequest): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // OAuth endpoints
+  async getOAuthProviders(): Promise<{ providers: OAuthProviderInfo[] }> {
+    return this.request<{ providers: OAuthProviderInfo[] }>('/auth/providers');
+  }
+
+  async initiateOAuth(provider: string, redirectUri?: string): Promise<{ authorization_url: string; state: string }> {
+    const params = new URLSearchParams();
+    if (redirectUri) {
+      params.append('redirect_uri', redirectUri);
+    }
+    
+    return this.request<{ authorization_url: string; state: string }>(`/auth/login/${provider}?${params}`);
+  }
+
+  // Organization endpoints
+  async getOrganizations(): Promise<OrganizationMembership[]> {
+    return this.request<OrganizationMembership[]>('/organizations');
+  }
+
+  async getOrganization(id: string): Promise<Organization> {
+    return this.request<Organization>(`/organizations/${id}`);
+  }
+
+  async createOrganization(data: OrganizationCreateRequest): Promise<Organization> {
+    return this.request<Organization>('/organizations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateOrganization(id: string, data: OrganizationUpdateRequest): Promise<Organization> {
+    return this.request<Organization>(`/organizations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteOrganization(id: string): Promise<void> {
+    return this.request<void>(`/organizations/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Invitation endpoints
+  async getInvitations(organizationId: string): Promise<Invitation[]> {
+    return this.request<Invitation[]>(`/invites?organization_id=${organizationId}`);
+  }
+
+  async createInvitation(data: InvitationCreateRequest): Promise<Invitation> {
+    return this.request<Invitation>('/invites', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async acceptInvitation(token: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/invites/accept/${token}`, {
+      method: 'POST',
+    });
+  }
+
+  async declineInvitation(token: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/invites/decline/${token}`, {
+      method: 'POST',
+    });
+  }
+
+  // Membership endpoints
+  async getOrganizationMembers(organizationId: string): Promise<any[]> {
+    return this.request<any[]>(`/memberships?organization_id=${organizationId}`);
+  }
+
+  async updateMemberRole(membershipId: string, role: MembershipRole): Promise<any> {
+    return this.request<any>(`/memberships/${membershipId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  async removeMember(membershipId: string): Promise<void> {
+    return this.request<void>(`/memberships/${membershipId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Dashboard endpoints
+  async getDashboardStats(): Promise<any> {
+    return this.request<any>('/dashboard/stats');
+  }
+
+  async getRecentActivities(): Promise<any[]> {
+    return this.request<any[]>('/dashboard/recent-activities');
+  }
+
+  // Contact endpoints
+  async getContacts(): Promise<any[]> {
+    return this.request<any[]>('/contacts');
+  }
+
+  async getContact(id: string): Promise<any> {
+    return this.request<any>(`/contacts/${id}`);
+  }
+
+  async createContact(contact: any): Promise<any> {
+    return this.request<any>('/contacts', {
+      method: 'POST',
+      body: JSON.stringify(contact),
+    });
+  }
+
+  async updateContact(id: string, contact: any): Promise<any> {
+    return this.request<any>(`/contacts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(contact),
+    });
   }
 
   async deleteContact(id: string): Promise<void> {
-    await api.delete(`/contacts/${id}`);
+    return this.request<void>(`/contacts/${id}`, {
+      method: 'DELETE',
+    });
   }
 
-  // Deal methods
-  async getDeals(): Promise<Deal[]> {
-    try {
-      const response: AxiosResponse<Deal[]> = await api.get('/deals');
-      
-      // Ensure we always return an array
-      if (!Array.isArray(response.data)) {
-        console.warn('API returned non-array data for deals:', response.data);
-        return [];
-      }
-      
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching deals:', error);
-      return []; // Return empty array on error to prevent crashes
-    }
+  // Deal endpoints
+  async getDeals(): Promise<any[]> {
+    return this.request<any[]>('/deals');
   }
 
-  async getDeal(id: string): Promise<Deal> {
-    const response: AxiosResponse<Deal> = await api.get(`/deals/${id}`);
-    return response.data;
+  async getDeal(id: string): Promise<any> {
+    return this.request<any>(`/deals/${id}`);
   }
 
-  async createDeal(data: DealCreateRequest): Promise<Deal> {
-    const response: AxiosResponse<Deal> = await api.post('/deals', data);
-    return response.data;
+  async createDeal(deal: any): Promise<any> {
+    return this.request<any>('/deals', {
+      method: 'POST',
+      body: JSON.stringify(deal),
+    });
   }
 
-  async updateDeal(id: string, data: DealUpdateRequest): Promise<Deal> {
-    const response: AxiosResponse<Deal> = await api.put(`/deals/${id}`, data);
-    return response.data;
+  async updateDeal(id: string, deal: any): Promise<any> {
+    return this.request<any>(`/deals/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(deal),
+    });
   }
 
   async deleteDeal(id: string): Promise<void> {
-    await api.delete(`/deals/${id}`);
+    return this.request<void>(`/deals/${id}`, {
+      method: 'DELETE',
+    });
   }
 
-  // Activity methods
-  async getActivities(contactId?: string, dealId?: string): Promise<Activity[]> {
-    try {
-      const params: Record<string, string> = {};
-      if (contactId) params.contact_id = contactId;
-      if (dealId) params.deal_id = dealId;
-      
-      const response: AxiosResponse<Activity[]> = await api.get('/activities', { params });
-      
-      // Ensure we always return an array
-      if (!Array.isArray(response.data)) {
-        console.warn('API returned non-array data for activities:', response.data);
-        return [];
-      }
-      
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching activities:', error);
-      return []; // Return empty array on error to prevent crashes
-    }
+  // Activity endpoints
+  async getActivities(): Promise<any[]> {
+    return this.request<any[]>('/activities');
   }
 
-  async getActivity(id: string): Promise<Activity> {
-    const response: AxiosResponse<Activity> = await api.get(`/activities/${id}`);
-    return response.data;
+  async getActivity(id: string): Promise<any> {
+    return this.request<any>(`/activities/${id}`);
   }
 
-  async createActivity(data: ActivityCreateRequest): Promise<Activity> {
-    const response: AxiosResponse<Activity> = await api.post('/activities', data);
-    return response.data;
+  async createActivity(activity: any): Promise<any> {
+    return this.request<any>('/activities', {
+      method: 'POST',
+      body: JSON.stringify(activity),
+    });
   }
 
-  async updateActivity(id: string, data: ActivityUpdateRequest): Promise<Activity> {
-    const response: AxiosResponse<Activity> = await api.put(`/activities/${id}`, data);
-    return response.data;
+  async updateActivity(id: string, activity: any): Promise<any> {
+    return this.request<any>(`/activities/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(activity),
+    });
   }
 
   async deleteActivity(id: string): Promise<void> {
-    await api.delete(`/activities/${id}`);
-  }
-
-  // Dashboard methods
-  async getDashboardStats(): Promise<DashboardStats> {
-    try {
-      const response: AxiosResponse<DashboardStats> = await api.get('/dashboard/stats');
-      
-      // Ensure deals_by_stage is always an object
-      if (!response.data.deals_by_stage || typeof response.data.deals_by_stage !== 'object') {
-        response.data.deals_by_stage = {
-          'Lead': 0,
-          'Qualified': 0,
-          'Proposal': 0,
-          'Negotiation': 0,
-          'Closed Won': 0,
-          'Closed Lost': 0,
-        };
-      }
-      
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-      // Return default stats on error
-      return {
-        total_contacts: 0,
-        total_deals: 0,
-        total_revenue: 0,
-        pipeline_value: 0,
-        deals_by_stage: {
-          'Lead': 0,
-          'Qualified': 0,
-          'Proposal': 0,
-          'Negotiation': 0,
-          'Closed Won': 0,
-          'Closed Lost': 0,
-        }
-      };
-    }
+    return this.request<void>(`/activities/${id}`, {
+      method: 'DELETE',
+    });
   }
 }
 
 // Export singleton instance
-export const apiService = new ApiService();
-
-// Export legacy APIs for backward compatibility
-export const contactsApi = {
-  getAll: (search?: string) => apiService.getContacts(search),
-  getById: (id: string) => apiService.getContact(id),
-  create: (data: ContactCreateRequest) => apiService.createContact(data),
-  update: (id: string, data: ContactUpdateRequest) => apiService.updateContact(id, data),
-  delete: (id: string) => apiService.deleteContact(id),
-};
-
-export const dealsApi = {
-  getAll: () => apiService.getDeals(),
-  getById: (id: string) => apiService.getDeal(id),
-  create: (data: DealCreateRequest) => apiService.createDeal(data),
-  update: (id: string, data: DealUpdateRequest) => apiService.updateDeal(id, data),
-  delete: (id: string) => apiService.deleteDeal(id),
-};
-
-export const activitiesApi = {
-  getAll: (contactId?: string, dealId?: string) => apiService.getActivities(contactId, dealId),
-  getById: (id: string) => apiService.getActivity(id),
-  create: (data: ActivityCreateRequest) => apiService.createActivity(data),
-  update: (id: string, data: ActivityUpdateRequest) => apiService.updateActivity(id, data),
-  delete: (id: string) => apiService.deleteActivity(id),
-};
-
-export const dashboardApi = {
-  getStats: () => apiService.getDashboardStats(),
-};
-
-export default api; 
+export const api = new ApiClient();
+export { ApiClient, ApiError, LocalStorageAdapter };
+export type { StorageAdapter }; 

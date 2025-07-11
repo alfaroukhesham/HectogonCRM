@@ -3,12 +3,19 @@ import { RouteObject } from 'react-router-dom';
 import { Dashboard, Contacts, Deals, Activities } from '../pages';
 import NotFound from '../pages/NotFound';
 
+// Lazy load organization management pages
+const Organizations = React.lazy(() => import('../pages/Organizations'));
+const OrganizationSettings = React.lazy(() => import('../pages/OrganizationSettings'));
+const TeamMembers = React.lazy(() => import('../pages/TeamMembers'));
+const Invitations = React.lazy(() => import('../pages/Invitations'));
+
 // Route configuration interface
 export interface RouteConfig {
   path: string;
   label: string;
   icon: string;
   description?: string;
+  requiresRole?: 'viewer' | 'editor' | 'admin';
 }
 
 // Navigation routes for the main menu
@@ -36,6 +43,38 @@ export const navigationRoutes: RouteConfig[] = [
     label: 'Activities',
     icon: '📋',
     description: 'Manage tasks and activities'
+  },
+];
+
+// Organization management routes (admin only)
+export const organizationRoutes: RouteConfig[] = [
+  {
+    path: '/organizations',
+    label: 'Organizations',
+    icon: '🏢',
+    description: 'Manage organizations',
+    requiresRole: 'admin'
+  },
+  {
+    path: '/team',
+    label: 'Team',
+    icon: '👥',
+    description: 'Manage team members',
+    requiresRole: 'admin'
+  },
+  {
+    path: '/invitations',
+    label: 'Invitations',
+    icon: '📧',
+    description: 'Manage invitations',
+    requiresRole: 'admin'
+  },
+  {
+    path: '/settings',
+    label: 'Settings',
+    icon: '⚙️',
+    description: 'Organization settings',
+    requiresRole: 'admin'
   },
 ];
 
@@ -101,13 +140,51 @@ export const createAppRoutes = (
       }
     ]
   },
-  // Future routes can be added here
+  // Organization management routes
   {
-    path: 'reports',
+    path: 'organizations',
     children: [
       {
         index: true,
-        element: <div className="p-6 text-center text-gray-500">Reports coming soon...</div>
+        element: (
+          <React.Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
+            <Organizations />
+          </React.Suspense>
+        )
+      },
+      {
+        path: ':id/settings',
+        element: (
+          <React.Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
+            <OrganizationSettings />
+          </React.Suspense>
+        )
+      }
+    ]
+  },
+  {
+    path: 'team',
+    children: [
+      {
+        index: true,
+        element: (
+          <React.Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
+            <TeamMembers />
+          </React.Suspense>
+        )
+      }
+    ]
+  },
+  {
+    path: 'invitations',
+    children: [
+      {
+        index: true,
+        element: (
+          <React.Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
+            <Invitations />
+          </React.Suspense>
+        )
       }
     ]
   },
@@ -116,7 +193,21 @@ export const createAppRoutes = (
     children: [
       {
         index: true,
-        element: <div className="p-6 text-center text-gray-500">Settings coming soon...</div>
+        element: (
+          <React.Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
+            <OrganizationSettings />
+          </React.Suspense>
+        )
+      }
+    ]
+  },
+  // Future routes can be added here
+  {
+    path: 'reports',
+    children: [
+      {
+        index: true,
+        element: <div className="p-6 text-center text-gray-500">Reports coming soon...</div>
       }
     ]
   },

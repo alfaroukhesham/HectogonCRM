@@ -50,5 +50,6 @@ class ActivityUpdate(BaseModel):
 class Activity(ActivityBase):
     """Complete activity model with all fields."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    organization_id: str  # Required for multi-tenancy
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow) 

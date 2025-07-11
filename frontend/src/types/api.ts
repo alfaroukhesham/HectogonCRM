@@ -5,6 +5,125 @@ export interface BaseEntity {
   updated_at: string;
 }
 
+// Multi-tenancy types
+export enum OrganizationPlan {
+  FREE = 'free',
+  BASIC = 'basic',
+  PREMIUM = 'premium',
+  ENTERPRISE = 'enterprise'
+}
+
+export interface CustomBranding {
+  primaryColor?: string;
+  secondaryColor?: string;
+  logoUrl?: string;
+  faviconUrl?: string;
+  customCSS?: string;
+  fontFamily?: string;
+  brandName?: string;
+  headerBackgroundColor?: string;
+  sidebarBackgroundColor?: string;
+  buttonColor?: string;
+  linkColor?: string;
+  // Add other branding properties as needed
+}
+
+export interface OrganizationSettings {
+  timezone: string;
+  date_format: string;
+  currency: string;
+  language: string;
+  allow_user_registration: boolean;
+  require_email_verification: boolean;
+  max_users?: number;
+  custom_branding: CustomBranding;
+}
+
+export interface Organization extends BaseEntity {
+  name: string;
+  slug: string;
+  description?: string;
+  plan: OrganizationPlan;
+  logo_url?: string;
+  website?: string;
+  industry?: string;
+  size?: string;
+  settings: OrganizationSettings;
+  is_active: boolean;
+  created_by: string;
+}
+
+export interface OrganizationCreateRequest {
+  name: string;
+  slug?: string;
+  description?: string;
+  plan?: OrganizationPlan;
+  logo_url?: string;
+  website?: string;
+  industry?: string;
+  size?: string;
+  settings?: Partial<OrganizationSettings>;
+}
+
+export interface OrganizationUpdateRequest extends Partial<OrganizationCreateRequest> {}
+
+export enum MembershipRole {
+  VIEWER = 'viewer',
+  EDITOR = 'editor',
+  ADMIN = 'admin'
+}
+
+export enum MembershipStatus {
+  PENDING = 'pending',
+  ACTIVE = 'active',
+  SUSPENDED = 'suspended'
+}
+
+export interface Membership extends BaseEntity {
+  user_id: string;
+  organization_id: string;
+  role: MembershipRole;
+  status: MembershipStatus;
+  joined_at: string;
+  last_accessed?: string;
+}
+
+export interface OrganizationMembership {
+  id: string;
+  user_id: string;
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  organization_logo_url?: string;
+  role: MembershipRole;
+  status: MembershipStatus;
+  joined_at: string;
+  last_accessed?: string;
+}
+
+export enum InvitationStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  DECLINED = 'declined',
+  EXPIRED = 'expired'
+}
+
+export interface Invitation extends BaseEntity {
+  organization_id: string;
+  email: string;
+  role: MembershipRole;
+  status: InvitationStatus;
+  invited_by: string;
+  expires_at: string;
+  accepted_at?: string;
+}
+
+export interface InvitationCreateRequest {
+  organization_id: string;
+  email: string;
+  role: MembershipRole;
+}
+
 // Contact types
 export interface Contact extends BaseEntity {
   first_name: string;
@@ -15,6 +134,7 @@ export interface Contact extends BaseEntity {
   position?: string;
   address?: string;
   notes?: string;
+  organization_id: string;
 }
 
 export interface ContactCreateRequest {
@@ -41,6 +161,7 @@ export interface Deal extends BaseEntity {
   probability: number;
   expected_close_date?: string;
   description?: string;
+  organization_id: string;
 }
 
 export interface DealCreateRequest {
@@ -67,6 +188,7 @@ export interface Activity extends BaseEntity {
   due_date?: string;
   priority: ActivityPriority;
   completed?: boolean;
+  organization_id: string;
 }
 
 export interface ActivityCreateRequest {

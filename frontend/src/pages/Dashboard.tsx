@@ -1,49 +1,70 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DashboardStats, Activity, Contact, Deal } from '@/types';
-import { formatCurrency } from '@/utils/formatters';
-import { StatCard, Chart, RecentActivity, QuickActions, Card } from '@/components/ui';
-import { apiService } from '@/utils/api';
+import { Activity, Contact, Deal } from '../types';
+import { formatCurrency } from '../utils/formatters';
+import { StatCard, Chart, RecentActivity, QuickActions, Card } from '../components/ui';
+import { api } from '../utils/api';
+import { useOrganization } from '../hooks/useOrganization';
 
-interface DashboardProps {
-  dashboardStats: DashboardStats;
-  isLoading: boolean;
+interface DashboardStats {
+  total_contacts: number;
+  total_deals: number;
+  won_deals: number;
+  total_revenue: number;
+  pipeline_value: number;
+  deals_by_stage: Record<string, number>;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
+const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { currentOrganization, isLoading: orgLoading, error: orgError, retryLoading } = useOrganization();
   const [mounted, setMounted] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
+    total_contacts: 0,
+    total_deals: 0,
+    won_deals: 0,
+    total_revenue: 0,
+    pipeline_value: 0,
+    deals_by_stage: {}
+  });
   const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
   const [recentContacts, setRecentContacts] = useState<Contact[]>([]);
   const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
-  const [loadingActivities, setLoadingActivities] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
-    loadRecentData();
   }, []);
 
-  const loadRecentData = async () => {
+  // Load dashboard data when organization context is ready
+  useEffect(() => {
+    if (mounted && currentOrganization && !orgLoading) {
+      loadDashboardData();
+    }
+  }, [mounted, currentOrganization, orgLoading]);
+
+  const loadDashboardData = async () => {
     try {
-      setLoadingActivities(true);
-      const [activities, contacts, deals] = await Promise.all([
-        apiService.getActivities(),
-        apiService.getContacts(),
-        apiService.getDeals()
+      setIsLoading(true);
+      setError(null);
+      
+      const [stats, activities, contacts, deals] = await Promise.all([
+        api.getDashboardStats(),
+        api.getActivities(),
+        api.getContacts(),
+        api.getDeals()
       ]);
       
-      // Get the 5 most recent activities
+      setDashboardStats(stats);
       setRecentActivities(activities.slice(0, 5));
-      
-      // Get the 3 most recent contacts
       setRecentContacts(contacts.slice(0, 3));
-      
-      // Get the 3 most recent deals
       setRecentDeals(deals.slice(0, 3));
     } catch (error) {
-      console.error('Error loading recent data:', error);
+      console.error('Error loading dashboard data:', error);
+      setError('Failed to load dashboard data');
     } finally {
-      setLoadingActivities(false);
+      setIsLoading(false);
     }
   };
 
@@ -113,7 +134,8 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
     }))
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 5);
 
-  if (isLoading) {
+  // Show loading while organization context is being loaded OR data is being fetched
+  if (orgLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
         <div className="max-w-7xl mx-auto">
@@ -165,19 +187,90 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
     );
   }
 
+  // Show error message if organization loading failed
+  if (orgError) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mt-20">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Organization Loading Failed</h1>
+            <p className="text-gray-600 dark:text-gray-400 mb-8">{orgError}</p>
+            <div className="space-x-4">
+              <button
+                onClick={retryLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md transition-colors"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate('/organizations')}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-md transition-colors"
+              >
+                Manage Organizations
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show message if no organization is selected
+  if (!currentOrganization) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mt-20">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">No Organization Selected</h1>
+            <p className="text-gray-600 dark:text-gray-400 mb-8">Please select an organization to view your dashboard.</p>
+            <button
+              onClick={() => navigate('/organizations')}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md transition-colors"
+            >
+              Select Organization
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-md">
+            <div className="flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                onClick={loadDashboardData}
+                className="text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 ml-4"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Prepare chart data from real backend data
-  const stageData = Object.entries(dashboardStats.deals_by_stage || {}).map(([stage, count], index) => ({
-    label: stage,
-    value: count,
-    color: [
+  const stageData = Object.entries(dashboardStats.deals_by_stage || {}).map(([stage, count], index) => {
+    const colors = [
       '#3B82F6', // Blue
       '#10B981', // Green  
       '#F59E0B', // Yellow
       '#EF4444', // Red
       '#8B5CF6', // Purple
       '#6B7280'  // Gray
-    ][index % 6]
-  }));
+    ];
+    return {
+      label: stage,
+      value: count,
+      color: colors[index % colors.length] || '#6B7280' // Fallback to gray
+    };
+  });
 
   // Calculate trend data based on real data (mock implementation)
   const generateTrendData = (baseValue: number) => {
@@ -188,7 +281,7 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
   };
 
   // Calculate win rate
-  const wonDeals = dashboardStats.deals_by_stage?.['Closed Won'] || 0;
+  const wonDeals = dashboardStats.deals_by_stage?.['closed_won'] || dashboardStats.deals_by_stage?.['Closed Won'] || 0;
   const totalDeals = dashboardStats.total_deals || 1;
   const winRate = Math.round((wonDeals / totalDeals) * 100);
 
@@ -196,140 +289,139 @@ const Dashboard: React.FC<DashboardProps> = ({ dashboardStats, isLoading }) => {
   const avgDealValue = wonDeals > 0 ? dashboardStats.total_revenue / wonDeals : 0;
 
   // Calculate hot leads (Proposal + Negotiation)
-  const hotLeads = (dashboardStats.deals_by_stage?.['Proposal'] || 0) + 
-                   (dashboardStats.deals_by_stage?.['Negotiation'] || 0);
+  const hotLeads = (dashboardStats.deals_by_stage?.['proposal'] || dashboardStats.deals_by_stage?.['Proposal'] || 0) + 
+                   (dashboardStats.deals_by_stage?.['negotiation'] || dashboardStats.deals_by_stage?.['Negotiation'] || 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
-      <div className="max-w-7xl mx-auto p-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className={`mb-8 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                Welcome back! 👋
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Here's what's happening with your business today.
-              </p>
-            </div>
-            <div className="hidden md:flex items-center space-x-3">
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Last updated: {new Date().toLocaleTimeString()}
-              </div>
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            </div>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            Dashboard
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Welcome back! Here's what's happening with your business today.
+          </p>
         </div>
 
         {/* Stats Grid */}
-        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 transition-all duration-700 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard
             title="Total Contacts"
-            value={dashboardStats.total_contacts.toLocaleString()}
+            value={dashboardStats.total_contacts.toString()}
             change={{ value: 12, type: 'increase' }}
+            trend={generateTrendData(dashboardStats.total_contacts)}
             icon="👥"
             color="blue"
-            trend={generateTrendData(dashboardStats.total_contacts)}
           />
           <StatCard
             title="Active Deals"
-            value={dashboardStats.total_deals.toLocaleString()}
+            value={dashboardStats.total_deals.toString()}
             change={{ value: 8, type: 'increase' }}
+            trend={generateTrendData(dashboardStats.total_deals)}
             icon="💼"
             color="green"
-            trend={generateTrendData(dashboardStats.total_deals)}
           />
           <StatCard
-            title="Total Revenue"
+            title="Revenue"
             value={formatCurrency(dashboardStats.total_revenue)}
             change={{ value: 23, type: 'increase' }}
+            trend={generateTrendData(dashboardStats.total_revenue / 1000)}
             icon="💰"
             color="purple"
-            trend={generateTrendData(dashboardStats.total_revenue / 1000)}
           />
           <StatCard
-            title="Pipeline Value"
-            value={formatCurrency(dashboardStats.pipeline_value)}
+            title="Win Rate"
+            value={`${winRate}%`}
             change={{ value: 5, type: 'increase' }}
-            icon="📈"
+            trend={generateTrendData(winRate)}
+            icon="🎯"
             color="orange"
-            trend={generateTrendData(dashboardStats.pipeline_value / 1000)}
           />
         </div>
 
-        {/* Charts and Activity Grid */}
-        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 transition-all duration-700 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-          {/* Deals by Stage Chart */}
+        {/* Charts and Quick Actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Deal Pipeline Chart */}
           <div className="lg:col-span-2">
-            <Chart
-              title="Deals by Stage"
-              data={stageData}
-              type="bar"
-            />
+            <Card className="h-full">
+              <div className="p-6">
+                <Chart
+                  title="Deal Pipeline"
+                  type="bar"
+                  data={stageData}
+                />
+              </div>
+            </Card>
           </div>
-          
-          {/* Recent Activity */}
-          <div>
-            <RecentActivity 
-              activities={loadingActivities ? [] : allRecentItems} 
-            />
-          </div>
-        </div>
 
-        {/* Bottom Grid */}
-        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6 transition-all duration-700 delay-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           {/* Quick Actions */}
           <div>
             <QuickActions actions={quickActions} />
           </div>
-          
-          {/* Performance Overview */}
-          <div className="lg:col-span-2">
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-                Performance Overview
-              </h3>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-500/10 dark:to-blue-600/10">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {wonDeals}
+        </div>
+
+        {/* Recent Activity and Performance Metrics */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent Activity */}
+          <Card className="h-full">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
+              <RecentActivity activities={allRecentItems} />
+            </div>
+          </Card>
+
+          {/* Performance Metrics */}
+          <Card className="h-full">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Performance Metrics</h3>
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Pipeline Value</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {formatCurrency(dashboardStats.pipeline_value)}
+                    </p>
                   </div>
-                  <div className="text-sm text-blue-600/80 dark:text-blue-400/80 mt-1">
-                    Won Deals
-                  </div>
-                </div>
-                
-                <div className="text-center p-4 rounded-xl bg-gradient-to-br from-green-50 to-green-100 dark:from-green-500/10 dark:to-green-600/10">
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {winRate}%
-                  </div>
-                  <div className="text-sm text-green-600/80 dark:text-green-400/80 mt-1">
-                    Win Rate
-                  </div>
-                </div>
-                
-                <div className="text-center p-4 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-500/10 dark:to-purple-600/10">
-                  <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {formatCurrency(avgDealValue)}
-                  </div>
-                  <div className="text-sm text-purple-600/80 dark:text-purple-400/80 mt-1">
-                    Avg Deal
+                  <div className="text-green-500">
+                    <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
                   </div>
                 </div>
-                
-                <div className="text-center p-4 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-500/10 dark:to-orange-600/10">
-                  <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                    {hotLeads}
+
+                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Avg Deal Value</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {formatCurrency(avgDealValue)}
+                    </p>
                   </div>
-                  <div className="text-sm text-orange-600/80 dark:text-orange-400/80 mt-1">
-                    Hot Leads
+                  <div className="text-blue-500">
+                    <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
+                      <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" />
+                    </svg>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Hot Leads</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {hotLeads}
+                    </p>
+                  </div>
+                  <div className="text-red-500">
+                    <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" />
+                    </svg>
                   </div>
                 </div>
               </div>
-            </Card>
-          </div>
+            </div>
+          </Card>
         </div>
       </div>
     </div>

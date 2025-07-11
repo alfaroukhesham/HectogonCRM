@@ -1,6 +1,6 @@
 import React, { useState, FormEvent, ChangeEvent } from 'react';
-import { Deal, DealFormData, Contact, DealStage } from '@/types';
-import { dealsApi } from '@/utils/api';
+import { Deal, DealFormData, Contact, DealStage } from '../types';
+import { api } from '../utils/api';
 
 interface DealFormProps {
   deal?: Deal | null;
@@ -53,9 +53,9 @@ const DealForm: React.FC<DealFormProps> = ({ deal, contacts, onSave, onCancel })
       };
 
       if (deal?.id) {
-        await dealsApi.update(deal.id, submitData);
+        await api.updateDeal(deal.id, submitData);
       } else {
-        await dealsApi.create(submitData);
+        await api.createDeal(submitData);
       }
       onSave();
     } catch (err) {
