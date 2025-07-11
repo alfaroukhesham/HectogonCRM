@@ -51,8 +51,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             </div>
           </div>
         </footer>
-        </div>
-      </main>
       </div>
     </div>
   );
