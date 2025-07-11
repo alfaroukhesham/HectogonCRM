@@ -293,10 +293,9 @@ const Dashboard: React.FC = () => {
                    (dashboardStats.deals_by_stage?.['negotiation'] || dashboardStats.deals_by_stage?.['Negotiation'] || 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="space-y-8">
         {/* Header */}
-        <div className="mb-8">
+        <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             Dashboard
           </h1>
@@ -306,7 +305,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
             title="Total Contacts"
             value={dashboardStats.total_contacts.toString()}
@@ -342,7 +341,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Charts and Quick Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Deal Pipeline Chart */}
           <div className="lg:col-span-2">
             <Card className="h-full">
@@ -423,7 +422,6 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </div>
-      </div>
     </div>
   );
 };

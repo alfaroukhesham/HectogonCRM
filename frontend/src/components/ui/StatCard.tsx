@@ -31,9 +31,9 @@ const StatCard: React.FC<StatCardProps> = ({
   };
 
   return (
-    <Card hover className="p-6 relative overflow-hidden group">
+    <Card hover className="p-6 relative overflow-hidden group bg-gradient-to-br from-white to-gray-50/50 dark:from-gray-800 dark:to-gray-900/50">
       {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-5 dark:opacity-10">
+      <div className="absolute inset-0 opacity-3 dark:opacity-5">
         <div className="absolute inset-0 bg-gradient-to-br from-transparent via-current to-transparent transform rotate-12 scale-150"></div>
       </div>
       
@@ -42,7 +42,7 @@ const StatCard: React.FC<StatCardProps> = ({
           <div className={`
             w-12 h-12 rounded-xl flex items-center justify-center
             bg-gradient-to-br ${colorClasses[color].split(' ')[0]} ${colorClasses[color].split(' ')[1]}
-            shadow-lg shadow-${color}-500/25
+            shadow-lg
             group-hover:scale-110 transition-transform duration-300
           `}>
             <div className="text-white text-xl">
@@ -65,10 +65,10 @@ const StatCard: React.FC<StatCardProps> = ({
         </div>
         
         <div className="space-y-1">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
             {title}
           </p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+          <p className="text-2xl font-bold text-gray-900 dark:text-white group-hover:scale-105 transition-transform duration-300 origin-left">
             {value}
           </p>
         </div>

@@ -48,10 +48,10 @@ export const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({ clas
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative w-full ${className}`}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+        className="w-full flex items-center space-x-3 px-3 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors shadow-sm"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
       >
@@ -67,10 +67,10 @@ export const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({ clas
           </div>
         )}
         <div className="flex-1 min-w-0 text-left">
-          <p className="text-sm font-medium text-gray-900 truncate">
+          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
             {currentOrganization?.name || 'Select Organization'}
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             {organizations.find(org => org.organization_id === currentOrganization?.id)?.role === 'admin' && '👑 Admin'}
             {organizations.find(org => org.organization_id === currentOrganization?.id)?.role === 'editor' && '✏️ Editor'}
             {organizations.find(org => org.organization_id === currentOrganization?.id)?.role === 'viewer' && '👁️ Viewer'}
@@ -96,7 +96,7 @@ export const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({ clas
           />
           
           {/* Dropdown */}
-          <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 z-20 max-h-64 overflow-y-auto">
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-600 z-20 max-h-64 overflow-y-auto">
             <div className="py-1">
               {organizations.map((org) => (
                 <button
@@ -111,7 +111,7 @@ export const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({ clas
                     }
                   }}
                   className={`w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-50 focus:outline-none focus:bg-gray-50 transition-colors ${
-                    currentOrganization?.id === org.organization_id ? 'bg-blue-50 text-blue-700' : 'text-gray-900'
+                    currentOrganization?.id === org.organization_id ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400' : 'text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
                   }`}
                   role="option"
                   aria-selected={currentOrganization?.id === org.organization_id}
@@ -128,10 +128,10 @@ export const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({ clas
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
+                    <p className="text-sm font-medium truncate text-gray-900 dark:text-white">
                       {org.organization_name}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
                       {org.role === 'admin' && '👑 Admin'}
                       {org.role === 'editor' && '✏️ Editor'}
                       {org.role === 'viewer' && '👁️ Viewer'}
@@ -147,15 +147,16 @@ export const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({ clas
             </div>
             
             <div className="border-t border-gray-200 py-1">
+            <div className="border-t border-gray-200 dark:border-gray-600 py-1">
               <button
                 onClick={() => {
                   setIsOpen(false);
                   // TODO: Open create organization modal
                 }}
-                className="w-full flex items-center space-x-3 px-3 py-2 text-left text-gray-700 hover:bg-gray-50 focus:outline-none focus:bg-gray-50 transition-colors"
+                className="w-full flex items-center space-x-3 px-3 py-2 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-700 transition-colors"
               >
-                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
                 </div>
