@@ -1,9 +1,11 @@
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING, Any
 from datetime import datetime, timezone
 from bson import ObjectId
 from bson.errors import InvalidId
-from motor.motor_asyncio import AsyncIOMotorDatabase
 import logging
+
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.models.membership import (
     Membership, MembershipCreate, MembershipUpdate, MembershipResponse,
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 class MembershipService:
     """Service for membership operations."""
     
-    def __init__(self, db: AsyncIOMotorDatabase):
+    def __init__(self, db: Any):
         self.db = db
         self.collection = db.memberships
         self.users_collection = db.users
@@ -26,12 +28,13 @@ class MembershipService:
     
     async def create_membership(
         self, 
-        membership_data: MembershipCreate
+        membership_data: MembershipCreate,
+        session=None
     ) -> Membership:
         """Create a new membership."""
         # Validate user exists
         try:
-            user = await self.users_collection.find_one({"_id": ObjectId(membership_data.user_id)})
+            user = await self.users_collection.find_one({"_id": ObjectId(membership_data.user_id)}, session=session)
             if not user:
                 raise ValueError("User not found")
         except InvalidId:
@@ -39,7 +42,7 @@ class MembershipService:
         
         # Validate organization exists
         try:
-            org = await self.organizations_collection.find_one({"_id": ObjectId(membership_data.organization_id)})
+            org = await self.organizations_collection.find_one({"_id": ObjectId(membership_data.organization_id)}, session=session)
             if not org:
                 raise ValueError("Organization not found")
         except InvalidId:
@@ -49,7 +52,7 @@ class MembershipService:
         existing = await self.collection.find_one({
             "user_id": membership_data.user_id,
             "organization_id": membership_data.organization_id
-        })
+        }, session=session)
         
         if existing:
             raise ValueError("User is already a member of this organization")
@@ -58,7 +61,7 @@ class MembershipService:
         membership_dict["created_at"] = datetime.now(timezone.utc)
         membership_dict["updated_at"] = datetime.now(timezone.utc)
         
-        result = await self.collection.insert_one(membership_dict)
+        result = await self.collection.insert_one(membership_dict, session=session)
         membership_dict["_id"] = str(result.inserted_id)
         
         return Membership(**membership_dict)
@@ -127,59 +130,72 @@ class MembershipService:
         user_id: str, 
         status: Optional[MembershipStatus] = None
     ) -> List[OrganizationMembershipResponse]:
-        """Get all memberships for a user with organization details."""
+        """Get all memberships for a user with organization details using efficient aggregation."""
         try:
             logger.info(f"Getting memberships for user: {user_id}, status: {status}")
             
-            query = {"user_id": user_id}
+            # Build match query
+            match_query = {"user_id": user_id}
             if status:
-                query["status"] = status
+                match_query["status"] = status
             
-            logger.info(f"Membership query: {query}")
-            
-            # First, check if user has any memberships at all
-            membership_count = await self.collection.count_documents(query)
-            logger.info(f"Found {membership_count} memberships matching query")
-            
-            if membership_count == 0:
-                logger.warning(f"No memberships found for user {user_id}")
-                return []
-            
+            # Optimized aggregation pipeline that handles string-to-ObjectId conversion
             pipeline = [
-                {"$match": query},
+                # 1. Match memberships for the user
+                {"$match": match_query},
+                # 2. Convert organization_id string to ObjectId for lookup
+                {
+                    "$addFields": {
+                        "organization_object_id": {"$toObjectId": "$organization_id"}
+                    }
+                },
+                # 3. Join with organizations collection
                 {
                     "$lookup": {
                         "from": "organizations",
-                        "let": {"org_id": {"$toObjectId": "$organization_id"}},
-                        "pipeline": [
-                            {"$match": {"$expr": {"$eq": ["$_id", "$$org_id"]}}}
-                        ],
-                        "as": "organization"
+                        "localField": "organization_object_id",
+                        "foreignField": "_id",
+                        "as": "organization_details"
                     }
                 },
-                {"$unwind": "$organization"}
+                # 4. Unwind the organization array (should contain exactly one organization)
+                {"$unwind": "$organization_details"},
+                # 5. Project the final structure
+                {
+                    "$project": {
+                        "_id": 1,
+                        "user_id": 1,
+                        "organization_id": "$organization_details._id",
+                        "organization_name": "$organization_details.name",
+                        "organization_slug": "$organization_details.slug",
+                        "organization_logo_url": "$organization_details.logo_url",
+                        "role": 1,
+                        "status": 1,
+                        "joined_at": 1,
+                        "last_accessed": 1
+                    }
+                }
             ]
             
-            logger.info(f"Running aggregation pipeline: {pipeline}")
+            logger.info(f"Running optimized aggregation pipeline for user {user_id}")
             
             memberships = []
             async for doc in self.collection.aggregate(pipeline):
                 try:
-                    org = doc["organization"]
                     membership = OrganizationMembershipResponse(
                         id=str(doc["_id"]),
                         user_id=doc["user_id"],
-                        organization_id=str(org["_id"]),
-                        organization_name=org["name"],
-                        organization_slug=org["slug"],
-                        organization_logo_url=org.get("logo_url"),
+                        organization_id=str(doc["organization_id"]),
+                        organization_name=doc["organization_name"],
+                        organization_slug=doc["organization_slug"],
+                        organization_logo_url=doc.get("organization_logo_url"),
                         role=doc["role"],
                         status=doc["status"],
                         joined_at=doc.get("joined_at"),
                         last_accessed=doc.get("last_accessed")
                     )
                     memberships.append(membership)
-                    logger.info(f"Successfully processed membership for organization: {org['name']}")
+                    logger.info(f"Successfully processed membership for organization: {doc['organization_name']}")
                 except Exception as e:
                     logger.error(f"Error processing membership document: {doc}, error: {str(e)}")
                     continue
@@ -197,43 +213,71 @@ class MembershipService:
         organization_id: str, 
         status: Optional[MembershipStatus] = None
     ) -> List[UserMembershipResponse]:
-        """Get all members of an organization with user details."""
-        query = {"organization_id": organization_id}
+        """Get all members of an organization with user details using efficient aggregation."""
+        # Build match query
+        match_query = {"organization_id": organization_id}
         if status:
-            query["status"] = status
+            match_query["status"] = status
         
+        # Optimized aggregation pipeline that handles string-to-ObjectId conversion
         pipeline = [
-            {"$match": query},
+            # 1. Match memberships for the organization
+            {"$match": match_query},
+            # 2. Convert user_id string to ObjectId for lookup
+            {
+                "$addFields": {
+                    "user_object_id": {"$toObjectId": "$user_id"}
+                }
+            },
+            # 3. Join with users collection
             {
                 "$lookup": {
                     "from": "users",
-                    "let": {"uid": {"$toObjectId": "$user_id"}},
-                    "pipeline": [
-                        {"$match": {"$expr": {"$eq": ["$_id", "$$uid"]}}}
-                    ],
-                    "as": "user"
+                    "localField": "user_object_id",
+                    "foreignField": "_id",
+                    "as": "user_details"
                 }
             },
-            {"$unwind": "$user"}
+            # 4. Unwind the user array (should contain exactly one user)
+            {"$unwind": "$user_details"},
+            # 5. Project the final structure
+            {
+                "$project": {
+                    "_id": 1,
+                    "user_id": "$user_details._id",
+                    "user_email": "$user_details.email",
+                    "user_name": "$user_details.full_name",
+                    "user_avatar_url": "$user_details.avatar_url",
+                    "organization_id": 1,
+                    "role": 1,
+                    "status": 1,
+                    "invited_by": 1,
+                    "joined_at": 1,
+                    "last_accessed": 1
+                }
+            }
         ]
         
         memberships = []
         async for doc in self.collection.aggregate(pipeline):
-            user = doc["user"]
-            membership = UserMembershipResponse(
-                id=str(doc["_id"]),
-                user_id=str(user["_id"]),
-                user_email=user["email"],
-                user_name=user["full_name"],
-                user_avatar_url=user.get("avatar_url"),
-                organization_id=doc["organization_id"],
-                role=doc["role"],
-                status=doc["status"],
-                invited_by=doc.get("invited_by"),
-                joined_at=doc.get("joined_at"),
-                last_accessed=doc.get("last_accessed")
-            )
-            memberships.append(membership)
+            try:
+                membership = UserMembershipResponse(
+                    id=str(doc["_id"]),
+                    user_id=str(doc["user_id"]),
+                    user_email=doc["user_email"],
+                    user_name=doc["user_name"],
+                    user_avatar_url=doc.get("user_avatar_url"),
+                    organization_id=doc["organization_id"],
+                    role=doc["role"],
+                    status=doc["status"],
+                    invited_by=doc.get("invited_by"),
+                    joined_at=doc.get("joined_at"),
+                    last_accessed=doc.get("last_accessed")
+                )
+                memberships.append(membership)
+            except Exception as e:
+                logger.error(f"Error processing organization member document: {doc}, error: {str(e)}")
+                continue
         
         return memberships
     

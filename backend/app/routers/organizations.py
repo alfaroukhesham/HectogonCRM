@@ -1,8 +1,10 @@
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException, status
-from motor.motor_asyncio import AsyncIOMotorDatabase
 import logging
 from bson import ObjectId
+
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.database import get_database
 from app.core.dependencies import (
@@ -15,7 +17,7 @@ from app.models.organization import (
 )
 from app.models.membership import (
     MembershipRole, MembershipCreate, MembershipStatus,
-    OrganizationMembershipResponse
+    OrganizationMembershipResponse, OrganizationContext
 )
 from app.services.organization_service import OrganizationService
 from app.services.membership_service import MembershipService
@@ -28,22 +30,37 @@ router = APIRouter(prefix="/organizations", tags=["organizations"])
 async def create_organization(
     organization_data: OrganizationCreate,
     current_user: User = Depends(get_current_active_user),
+    db: Any = Depends(get_database),
     org_service: OrganizationService = Depends(get_organization_service),
     membership_service: MembershipService = Depends(get_membership_service)
 ):
     """Create a new organization."""
     try:
-        # Create organization
-        organization = await org_service.create_organization(organization_data, current_user.id)
-        
-        # Create admin membership for creator
-        membership_data = MembershipCreate(
-            user_id=current_user.id,
-            organization_id=organization.id,
-            role=MembershipRole.ADMIN,
-            status=MembershipStatus.ACTIVE
-        )
-        await membership_service.create_membership(membership_data)
+        # Start a client session
+        async with await db.client.start_session() as session:
+            # Start a transaction
+            async with session.start_transaction():
+                try:
+                    # Create organization
+                    organization = await org_service.create_organization(
+                        organization_data, current_user.id, session=session
+                    )
+                    
+                    # Create admin membership for creator
+                    membership_data = MembershipCreate(
+                        user_id=current_user.id,
+                        organization_id=organization.id,
+                        role=MembershipRole.ADMIN,
+                        status=MembershipStatus.ACTIVE
+                    )
+                    await membership_service.create_membership(membership_data, session=session)
+                    
+                except Exception as e:
+                    # The transaction will be automatically aborted on an exception
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to create organization."
+                    ) from e
         
         return OrganizationResponse(**organization.dict())
         
@@ -87,7 +104,7 @@ async def get_user_organizations(
 @router.get("/debug/{user_id}")
 async def debug_user_organizations(
     user_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_database)
+    db: Any = Depends(get_database)
 ):
     """Debug endpoint to check user organizations directly from database."""
     try:
@@ -156,12 +173,10 @@ async def get_organization(
 async def update_organization(
     organization_id: str,
     organization_data: OrganizationUpdate,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_admin),
+    org_context: OrganizationContext = Depends(require_org_admin),
     org_service: OrganizationService = Depends(get_organization_service)
 ):
     """Update organization (admin only)."""
-    org_id, user_role = org_context
-    
     organization = await org_service.update_organization(organization_id, organization_data)
     if not organization:
         raise HTTPException(
@@ -175,12 +190,10 @@ async def update_organization(
 @router.delete("/{organization_id}")
 async def delete_organization(
     organization_id: str,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_admin),
+    org_context: OrganizationContext = Depends(require_org_admin),
     org_service: OrganizationService = Depends(get_organization_service)
 ):
     """Delete organization (admin only)."""
-    org_id, user_role = org_context
-    
     success = await org_service.delete_organization(organization_id)
     if not success:
         raise HTTPException(

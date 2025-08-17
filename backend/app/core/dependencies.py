@@ -1,18 +1,20 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, Any
 import logging
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, status, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from redis.asyncio import Redis
 from app.core.security import verify_token
 from app.core.database import get_database
 from app.core.redis_client import get_redis_client
 from app.models.user import User, TokenData
-from app.models.membership import MembershipRole, MembershipStatus
-from app.services.membership_service import MembershipService
-from app.services.organization_service import OrganizationService
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.models.membership import MembershipRole, MembershipStatus, OrganizationContext
 from bson import ObjectId
 from bson.errors import InvalidId
+
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
+    from app.services.membership_service import MembershipService
+    from app.services.organization_service import OrganizationService
 
 
 # HTTP Bearer token scheme
@@ -38,7 +40,7 @@ async def get_current_user_token(
 
 async def get_current_user(
     token_data: TokenData = Depends(get_current_user_token),
-    db: AsyncIOMotorDatabase = Depends(get_database)
+    db: Any = Depends(get_database)
 ) -> User:
     """Get current user from database."""
     try:
@@ -96,10 +98,11 @@ async def get_current_organization_id(
 
 
 async def get_organization_context(
+    request: Request,
     organization_id: Optional[str] = Depends(get_current_organization_id),
     current_user: User = Depends(get_current_active_user),
-    db: AsyncIOMotorDatabase = Depends(get_database)
-) -> tuple[str, MembershipRole]:
+    db: Any = Depends(get_database)
+) -> OrganizationContext:
     """Get organization context and user's role in it."""
     if not organization_id:
         raise HTTPException(
@@ -107,35 +110,38 @@ async def get_organization_context(
             detail="Organization ID is required. Please provide X-Organization-ID header."
         )
     
+    from app.services.membership_service import MembershipService
     membership_service = MembershipService(db)
-    user_role = await membership_service.check_user_role(current_user.id, organization_id)
     
-    if not user_role:
+    # Fetch the full membership document
+    membership = await membership_service.get_membership(current_user.id, organization_id)
+    if not membership:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this organization"
+            detail="User is not a member of this organization"
         )
+    
+    # Store the membership object in the request state for later use
+    request.state.membership = membership
     
     # Update last accessed timestamp
     await membership_service.update_last_accessed(current_user.id, organization_id)
     
-    return organization_id, user_role
+    return OrganizationContext(organization_id=organization_id, user_role=membership.role)
 
 
 def require_organization_role(required_role: MembershipRole):
     """Dependency factory for organization role-based access control."""
     async def role_checker(
-        org_context: tuple[str, MembershipRole] = Depends(get_organization_context)
-    ) -> tuple[str, MembershipRole]:
-        organization_id, user_role = org_context
-        
+        org_context: OrganizationContext = Depends(get_organization_context)
+    ) -> OrganizationContext:
         role_hierarchy = {
             MembershipRole.VIEWER: 1,
             MembershipRole.EDITOR: 2,
             MembershipRole.ADMIN: 3
         }
         
-        user_level = role_hierarchy.get(user_role, 0)
+        user_level = role_hierarchy.get(org_context.user_role, 0)
         required_level = role_hierarchy.get(required_role, 0)
         
         if user_level < required_level:
@@ -144,7 +150,7 @@ def require_organization_role(required_role: MembershipRole):
                 detail=f"Insufficient permissions in this organization. Required role: {required_role}"
             )
         
-        return organization_id, user_role
+        return org_context
     
     return role_checker
 
@@ -161,7 +167,7 @@ require_org_viewer = require_organization_role(MembershipRole.VIEWER)
 
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    db: AsyncIOMotorDatabase = Depends(get_database)
+    db: Any = Depends(get_database)
 ) -> Optional[User]:
     """Get current user if token is provided, otherwise return None."""
     if credentials is None:
@@ -186,35 +192,42 @@ async def get_optional_user(
 
 
 async def get_optional_organization_context(
+    request: Request,
     organization_id: Optional[str] = Depends(get_current_organization_id),
     current_user: Optional[User] = Depends(get_optional_user),
-    db: AsyncIOMotorDatabase = Depends(get_database)
-) -> tuple[Optional[str], Optional[MembershipRole]]:
+    db: Any = Depends(get_database)
+) -> Optional[OrganizationContext]:
     """Get optional organization context."""
     if not organization_id or not current_user:
-        return None, None
+        return None
     
+    from app.services.membership_service import MembershipService
     membership_service = MembershipService(db)
-    user_role = await membership_service.check_user_role(current_user.id, organization_id)
+    membership = await membership_service.get_membership(current_user.id, organization_id)
     
-    if user_role:
+    if membership:
+        # Store the membership object in the request state for later use
+        request.state.membership = membership
         await membership_service.update_last_accessed(current_user.id, organization_id)
+        return OrganizationContext(organization_id=organization_id, user_role=membership.role)
     
-    return organization_id, user_role
+    return None
 
 
 # Service dependencies
 async def get_organization_service(
-    db: AsyncIOMotorDatabase = Depends(get_database)
-) -> OrganizationService:
+    db: Any = Depends(get_database)
+) -> Any:
     """Get organization service."""
+    from app.services.organization_service import OrganizationService
     return OrganizationService(db)
 
 
 async def get_membership_service(
-    db: AsyncIOMotorDatabase = Depends(get_database)
-) -> MembershipService:
+    db: Any = Depends(get_database)
+) -> Any:
     """Get membership service."""
+    from app.services.membership_service import MembershipService
     return MembershipService(db)
 
 

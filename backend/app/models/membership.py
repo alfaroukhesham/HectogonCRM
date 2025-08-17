@@ -97,4 +97,10 @@ class OrganizationMembershipResponse(BaseModel):
     role: MembershipRole
     status: MembershipStatus
     joined_at: Optional[datetime]
-    last_accessed: Optional[datetime] 
+    last_accessed: Optional[datetime]
+
+
+class OrganizationContext(BaseModel):
+    """Organization context for requests."""
+    organization_id: str
+    user_role: MembershipRole 

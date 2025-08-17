@@ -1,9 +1,11 @@
 import re
 import uuid
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING, Any
 from datetime import datetime, timezone
 from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorDatabase
+
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.models.organization import (
     Organization, OrganizationCreate, OrganizationUpdate, OrganizationResponse
@@ -14,7 +16,7 @@ from app.models.membership import Membership, MembershipCreate, MembershipRole, 
 class OrganizationService:
     """Service for organization operations."""
     
-    def __init__(self, db: AsyncIOMotorDatabase):
+    def __init__(self, db: Any):
         self.db = db
         self.collection = db.organizations
         self.membership_collection = db.memberships
@@ -22,7 +24,8 @@ class OrganizationService:
     async def create_organization(
         self, 
         org_data: OrganizationCreate, 
-        created_by: str
+        created_by: str,
+        session=None
     ) -> Organization:
         """Create a new organization."""
         # Validate input data
@@ -44,7 +47,7 @@ class OrganizationService:
             raise ValueError("Created by user ID is required")
         
         # Check if slug is unique
-        if await self.collection.find_one({"slug": org_data.slug}):
+        if await self.collection.find_one({"slug": org_data.slug}, session=session):
             raise ValueError(f"Organization with slug '{org_data.slug}' already exists")
         
         org_dict = org_data.dict()
@@ -57,7 +60,7 @@ class OrganizationService:
             from app.models.organization import OrganizationSettings
             org_dict["settings"] = OrganizationSettings().dict()
         
-        result = await self.collection.insert_one(org_dict)
+        result = await self.collection.insert_one(org_dict, session=session)
         org_dict["_id"] = str(result.inserted_id)
         
         return Organization(**org_dict)
