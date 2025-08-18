@@ -241,4 +241,12 @@ async def get_redis() -> Redis:
     Returns:
         Redis: Redis client instance from the connection pool
     """
-    return get_redis_client() 
+    return get_redis_client()
+
+
+async def get_cache_service(
+    db: Any = Depends(get_database)
+) -> Any:
+    """Get cache service."""
+    from app.services.cache_service import CacheService
+    return CacheService(get_redis_client()) 

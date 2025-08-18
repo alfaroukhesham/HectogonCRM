@@ -8,7 +8,7 @@ from app.models.membership import MembershipRole
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context, 
-    require_org_editor, require_org_viewer
+    require_org_editor, require_org_viewer, get_cache_service
 )
 
 
@@ -23,7 +23,8 @@ router = APIRouter(
 async def create_contact(
     contact: ContactCreate,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Create a new contact."""
     organization_id, user_role = org_context
@@ -32,6 +33,10 @@ async def create_contact(
     contact_dict["organization_id"] = organization_id
     contact_obj = Contact(**contact_dict)
     await db.contacts.insert_one(contact_obj.dict())
+    
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     return contact_obj
 
 
@@ -85,7 +90,8 @@ async def update_contact(
     contact_id: str,
     contact: ContactUpdate,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Update a contact."""
     organization_id, user_role = org_context
@@ -101,6 +107,9 @@ async def update_contact(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
     
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     updated_contact = await db.contacts.find_one({
         "id": contact_id,
         "organization_id": organization_id
@@ -112,7 +121,8 @@ async def update_contact(
 async def delete_contact(
     contact_id: str,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Delete a contact."""
     organization_id, user_role = org_context
@@ -123,4 +133,8 @@ async def delete_contact(
     })
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
+    
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     return {"message": "Contact deleted successfully"} 

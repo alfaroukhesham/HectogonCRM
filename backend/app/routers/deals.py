@@ -8,7 +8,7 @@ from app.models.membership import MembershipRole
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context,
-    require_org_editor, require_org_viewer
+    require_org_editor, require_org_viewer, get_cache_service
 )
 
 
@@ -23,7 +23,8 @@ router = APIRouter(
 async def create_deal(
     deal: DealCreate,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Create a new deal."""
     organization_id, user_role = org_context
@@ -32,6 +33,10 @@ async def create_deal(
     deal_dict["organization_id"] = organization_id
     deal_obj = Deal(**deal_dict)
     await db.deals.insert_one(deal_obj.dict())
+    
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     return deal_obj
 
 
@@ -75,7 +80,8 @@ async def update_deal(
     deal_id: str,
     deal: DealUpdate,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Update a deal."""
     organization_id, user_role = org_context
@@ -91,6 +97,9 @@ async def update_deal(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Deal not found")
     
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     updated_deal = await db.deals.find_one({
         "id": deal_id,
         "organization_id": organization_id
@@ -102,7 +111,8 @@ async def update_deal(
 async def delete_deal(
     deal_id: str,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Delete a deal."""
     organization_id, user_role = org_context
@@ -113,4 +123,8 @@ async def delete_deal(
     })
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Deal not found")
+    
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     return {"message": "Deal deleted successfully"} 

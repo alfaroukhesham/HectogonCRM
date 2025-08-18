@@ -8,7 +8,7 @@ from app.models.membership import MembershipRole
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context,
-    require_org_editor, require_org_viewer
+    require_org_editor, require_org_viewer, get_cache_service
 )
 
 
@@ -23,7 +23,8 @@ router = APIRouter(
 async def create_activity(
     activity: ActivityCreate,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Create a new activity."""
     organization_id, user_role = org_context
@@ -49,6 +50,10 @@ async def create_activity(
     activity_dict["organization_id"] = organization_id
     activity_obj = Activity(**activity_dict)
     await db.activities.insert_one(activity_obj.dict())
+    
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     return activity_obj
 
 
@@ -95,7 +100,8 @@ async def update_activity(
     activity_id: str,
     activity: ActivityUpdate,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Update an activity."""
     organization_id, user_role = org_context
@@ -111,6 +117,9 @@ async def update_activity(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Activity not found")
     
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     updated_activity = await db.activities.find_one({
         "id": activity_id,
         "organization_id": organization_id
@@ -122,7 +131,8 @@ async def update_activity(
 async def delete_activity(
     activity_id: str,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service=Depends(get_cache_service)
 ):
     """Delete an activity."""
     organization_id, user_role = org_context
@@ -133,4 +143,8 @@ async def delete_activity(
     })
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Activity not found")
+    
+    # Invalidate the cache AFTER the DB write is successful
+    await cache_service.invalidate_dashboard_stats(organization_id)
+    
     return {"message": "Activity deleted successfully"}

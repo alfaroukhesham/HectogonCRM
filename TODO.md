@@ -23,11 +23,16 @@
 - [ ] Store OAuth State Management tokens in Redis with short TTL.
 - [ ] Store Email Verification & Password Reset Tokens in Redis with TTL.
 - [ ] Cache Frequently Accessed Data (individual contact/deal/activity records, organization details, user profile information).
-- [ ] Implement API Rate Limiting using Redis.
+- [ ] **Implement API Rate Limiting using Redis.**
+  - Use Redis's atomic `INCR` and `EXPIRE` commands for performant and safe rate limiting.
+  - Protect API endpoints from abuse with configurable rate limits per endpoint/user.
 
 ## Advanced Caching Opportunities (Redis Integration)
 
-- [ ] Implement Real-time Notifications & Activity Feeds using Redis.
+- [ ] **Expand Redis Role for Real-time Features:**
+  - **Real-time Notifications:** Utilize Redis's Pub/Sub feature to power real-time notifications via WebSockets.
+  - When important events occur (e.g., new deal created), publish messages to Redis channels for connected clients.
+  - **Rate Limiting:** Implement rate limiting using Redis's atomic `INCR` and `EXPIRE` commands for performant API protection.
 - [ ] Cache Data Aggregation & Reporting results.
 - [ ] Implement Multi-tenant Data Isolation with organization-specific cache keys.
 - [ ] Implement API Response Caching for GET requests.
@@ -35,7 +40,11 @@
 ## Implementation Recommendations (Redis)
 
 - [ ] Define and implement a consistent Cache Key Strategy.
-- [ ] Develop and implement a robust Cache Invalidation Strategy (Write-through, TTL-based, Event-driven, Organization-scoped).
+- [ ] **Implement a Cache Invalidation Strategy:**
+  - For every service function that modifies data (e.g., updating user roles, changing organization names), actively invalidate corresponding Redis cache keys.
+  - Ensure cache doesn't serve stale data after write operations.
+  - Follow the pattern: 1. Update the database. 2. Delete the relevant key from Redis.
+  - Implement Write-through, TTL-based, Event-driven, and Organization-scoped invalidation strategies.
 - [ ] Configure Redis for optimal performance (Memory, Persistence, Replication, Monitoring).
 
 ## Production-Ready CRM Features Roadmap
