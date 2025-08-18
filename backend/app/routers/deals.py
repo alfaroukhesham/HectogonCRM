@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List, Optional
 from datetime import datetime, timezone
 
@@ -8,7 +8,7 @@ from app.models.membership import MembershipRole
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context,
-    require_org_editor, require_org_viewer, get_cache_service
+    require_org_editor, require_org_viewer, get_common_services, CommonServices
 )
 
 
@@ -22,9 +22,10 @@ router = APIRouter(
 @router.post("/", response_model=Deal)
 async def create_deal(
     deal: DealCreate,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    services: CommonServices = Depends(get_common_services)
 ):
     """Create a new deal."""
     organization_id, user_role = org_context
@@ -34,8 +35,8 @@ async def create_deal(
     deal_obj = Deal(**deal_dict)
     await db.deals.insert_one(deal_obj.dict())
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task (deal creation affects dashboard counts)
+    background_tasks.add_task(services.cache.invalidate_dashboard_stats, organization_id)
     
     return deal_obj
 
@@ -79,9 +80,10 @@ async def get_deal(
 async def update_deal(
     deal_id: str,
     deal: DealUpdate,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    services: CommonServices = Depends(get_common_services)
 ):
     """Update a deal."""
     organization_id, user_role = org_context
@@ -97,8 +99,11 @@ async def update_deal(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Deal not found")
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Check if any dashboard-affecting fields were updated (stage, value)
+    dashboard_fields_updated = any(field in update_data for field in ['stage', 'value'])
+    if dashboard_fields_updated:
+        # Schedule cache invalidation as background task (stage/value changes affect dashboard stats)
+        background_tasks.add_task(services.cache.invalidate_dashboard_stats, organization_id)
     
     updated_deal = await db.deals.find_one({
         "id": deal_id,
@@ -110,9 +115,10 @@ async def update_deal(
 @router.delete("/{deal_id}")
 async def delete_deal(
     deal_id: str,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    services: CommonServices = Depends(get_common_services)
 ):
     """Delete a deal."""
     organization_id, user_role = org_context
@@ -124,7 +130,7 @@ async def delete_deal(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Deal not found")
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task (deal deletion affects dashboard counts)
+    background_tasks.add_task(services.cache.invalidate_dashboard_stats, organization_id)
     
     return {"message": "Deal deleted successfully"} 

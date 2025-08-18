@@ -11,7 +11,7 @@ from app.models.membership import MembershipRole
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context,
-    require_org_editor, require_org_viewer, get_cache_service
+    require_org_editor, require_org_viewer, get_common_services, CommonServices
 )
 
 
@@ -27,8 +27,7 @@ async def create_activity(
     activity: ActivityCreate,
     background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    db=Depends(get_database)
 ):
     """Create a new activity."""
     organization_id, user_role = org_context
@@ -55,8 +54,8 @@ async def create_activity(
     activity_obj = Activity(**activity_dict)
     await db.activities.insert_one(activity_obj.dict())
     
-    # Schedule cache invalidation as background task
-    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
+    # Activities don't affect dashboard stats (dashboard only tracks contacts/deals counts and revenue)
+    # No cache invalidation needed
     
     return activity_obj
 
@@ -105,8 +104,7 @@ async def update_activity(
     activity: ActivityUpdate,
     background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    db=Depends(get_database)
 ):
     """Update an activity."""
     organization_id, user_role = org_context
@@ -122,8 +120,8 @@ async def update_activity(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Activity not found")
     
-    # Schedule cache invalidation as background task
-    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
+    # Activities don't affect dashboard stats (dashboard only tracks contacts/deals counts and revenue)
+    # No cache invalidation needed
     
     updated_activity = await db.activities.find_one({
         "id": activity_id,
@@ -137,8 +135,7 @@ async def delete_activity(
     activity_id: str,
     background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    db=Depends(get_database)
 ):
     """Delete an activity."""
     organization_id, user_role = org_context
@@ -150,7 +147,7 @@ async def delete_activity(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Activity not found")
     
-    # Schedule cache invalidation as background task
-    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
+    # Activities don't affect dashboard stats (dashboard only tracks contacts/deals counts and revenue)
+    # No cache invalidation needed
     
     return {"message": "Activity deleted successfully"}

@@ -8,7 +8,7 @@ from app.models.membership import MembershipRole
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context, 
-    require_org_editor, require_org_viewer, get_cache_service
+    require_org_editor, require_org_viewer, get_common_services, CommonServices
 )
 
 
@@ -25,7 +25,7 @@ async def create_contact(
     background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    services: CommonServices = Depends(get_common_services)
 ):
     """Create a new contact."""
     organization_id, user_role = org_context
@@ -36,7 +36,7 @@ async def create_contact(
     await db.contacts.insert_one(contact_obj.dict())
     
     # Schedule cache invalidation as background task
-    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
+    background_tasks.add_task(services.cache.invalidate_dashboard_stats, organization_id)
     
     return contact_obj
 
@@ -92,8 +92,7 @@ async def update_contact(
     contact: ContactUpdate,
     background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
-    db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    db=Depends(get_database)
 ):
     """Update a contact."""
     organization_id, user_role = org_context
@@ -109,8 +108,8 @@ async def update_contact(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
     
-    # Schedule cache invalidation as background task
-    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
+    # Contact updates don't affect dashboard stats (only counts matter, not individual contact details)
+    # No cache invalidation needed for updates
     
     updated_contact = await db.contacts.find_one({
         "id": contact_id,
@@ -125,7 +124,7 @@ async def delete_contact(
     background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
-    cache_service=Depends(get_cache_service)
+    services: CommonServices = Depends(get_common_services)
 ):
     """Delete a contact."""
     organization_id, user_role = org_context
@@ -138,6 +137,6 @@ async def delete_contact(
         raise HTTPException(status_code=404, detail="Contact not found")
     
     # Schedule cache invalidation as background task
-    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
+    background_tasks.add_task(services.cache.invalidate_dashboard_stats, organization_id)
     
     return {"message": "Contact deleted successfully"} 

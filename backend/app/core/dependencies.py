@@ -249,4 +249,47 @@ async def get_cache_service(
 ) -> Any:
     """Get cache service."""
     from app.services.cache_service import CacheService
-    return CacheService(get_redis_client()) 
+    return CacheService(get_redis_client())
+
+
+class CommonServices:
+    """
+    Centralized service container for commonly used services.
+    This pattern reduces boilerplate and makes it easier to manage dependencies
+    as the application grows.
+    
+    Example usage in routers:
+        services: CommonServices = Depends(get_common_services)
+        services.cache.invalidate_dashboard_stats(org_id)
+        services.membership.get_membership(user_id, org_id)
+        
+    To add new services:
+        1. Add the service to __init__ parameters
+        2. Add the service to get_common_services() dependencies
+        3. All routers automatically get access to the new service
+    """
+    def __init__(
+        self,
+        cache: Any,
+        membership: Any,
+        organization: Any,
+        # Future services can be easily added here:
+        # notification: Any,
+        # audit: Any,
+        # email: Any,
+    ):
+        self.cache = cache
+        self.membership = membership
+        self.organization = organization
+        # self.notification = notification
+        # self.audit = audit
+        # self.email = email
+
+
+def get_common_services(
+    cache: Any = Depends(get_cache_service),
+    membership: Any = Depends(get_membership_service),
+    organization: Any = Depends(get_organization_service),
+) -> CommonServices:
+    """Get common services dependency."""
+    return CommonServices(cache, membership, organization) 
