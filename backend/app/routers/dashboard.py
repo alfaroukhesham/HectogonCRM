@@ -40,22 +40,28 @@ async def get_dashboard_stats(
         total_deals = await db.deals.count_documents({"organization_id": organization_id})
         won_deals = await db.deals.count_documents({
             "organization_id": organization_id,
-            "stage": DealStage.closed_won
+            "stage": DealStage.closed_won.value
         })
         
-        # Calculate total revenue
-        won_deals_data = await db.deals.find({
-            "organization_id": organization_id,
-            "stage": DealStage.closed_won
-        }).to_list(1000)
-        total_revenue = sum(deal["value"] for deal in won_deals_data)
+        # Calculate total revenue (accurate, server-side)
+        revenue_agg = await db.deals.aggregate([
+            {"$match": {
+                "organization_id": organization_id,
+                "stage": DealStage.closed_won.value
+            }},
+            {"$group": {"_id": None, "total": {"$sum": "$value"}}}
+        ]).to_list(length=1)
+        total_revenue = revenue_agg[0]["total"] if revenue_agg else 0
         
-        # Calculate pipeline value
-        active_deals = await db.deals.find({
-            "organization_id": organization_id,
-            "stage": {"$nin": [DealStage.closed_won, DealStage.closed_lost]}
-        }).to_list(1000)
-        pipeline_value = sum(deal["value"] for deal in active_deals)
+        # Calculate pipeline value (accurate, server-side)
+        pipeline_agg = await db.deals.aggregate([
+            {"$match": {
+                "organization_id": organization_id,
+                "stage": {"$nin": [DealStage.closed_won.value, DealStage.closed_lost.value]}
+            }},
+            {"$group": {"_id": None, "total": {"$sum": "$value"}}}
+        ]).to_list(length=1)
+        pipeline_value = pipeline_agg[0]["total"] if pipeline_agg else 0
         
         # Deals by stage
         stages = [stage.value for stage in DealStage]
@@ -76,12 +82,16 @@ async def get_dashboard_stats(
             "deals_by_stage": deals_by_stage
         }
         
-        # 4. Store the fresh stats in Redis before returning
-        await redis_client.set(
-            cache_key,
-            json.dumps(stats),
-            ex=600  # Cache for 10 minutes (600 seconds)
-        )
+        # 4. Store the fresh stats in Redis before returning (best-effort)
+        try:
+            await redis_client.set(
+                cache_key,
+                json.dumps(stats),
+                ex=600  # Cache for 10 minutes (600 seconds)
+            )
+        except Exception:
+            # Best-effort cache write; don't fail the request
+            pass
         
         return stats
     except Exception as e:

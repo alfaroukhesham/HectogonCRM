@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List, Optional
 from datetime import datetime
 
@@ -22,6 +22,7 @@ router = APIRouter(
 @router.post("/", response_model=Contact)
 async def create_contact(
     contact: ContactCreate,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
     cache_service=Depends(get_cache_service)
@@ -34,8 +35,8 @@ async def create_contact(
     contact_obj = Contact(**contact_dict)
     await db.contacts.insert_one(contact_obj.dict())
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task
+    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
     
     return contact_obj
 
@@ -89,6 +90,7 @@ async def get_contact(
 async def update_contact(
     contact_id: str,
     contact: ContactUpdate,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
     cache_service=Depends(get_cache_service)
@@ -107,8 +109,8 @@ async def update_contact(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task
+    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
     
     updated_contact = await db.contacts.find_one({
         "id": contact_id,
@@ -120,6 +122,7 @@ async def update_contact(
 @router.delete("/{contact_id}")
 async def delete_contact(
     contact_id: str,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
     cache_service=Depends(get_cache_service)
@@ -134,7 +137,7 @@ async def delete_contact(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task
+    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
     
     return {"message": "Contact deleted successfully"} 

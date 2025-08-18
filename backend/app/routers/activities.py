@@ -1,6 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List, Optional
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.models.activity import Activity, ActivityCreate, ActivityUpdate
 from app.models.user import User
@@ -22,6 +25,7 @@ router = APIRouter(
 @router.post("/", response_model=Activity)
 async def create_activity(
     activity: ActivityCreate,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
     cache_service=Depends(get_cache_service)
@@ -51,8 +55,8 @@ async def create_activity(
     activity_obj = Activity(**activity_dict)
     await db.activities.insert_one(activity_obj.dict())
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task
+    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
     
     return activity_obj
 
@@ -99,6 +103,7 @@ async def get_activity(
 async def update_activity(
     activity_id: str,
     activity: ActivityUpdate,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
     cache_service=Depends(get_cache_service)
@@ -117,8 +122,8 @@ async def update_activity(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Activity not found")
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task
+    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
     
     updated_activity = await db.activities.find_one({
         "id": activity_id,
@@ -130,6 +135,7 @@ async def update_activity(
 @router.delete("/{activity_id}")
 async def delete_activity(
     activity_id: str,
+    background_tasks: BackgroundTasks,
     org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
     db=Depends(get_database),
     cache_service=Depends(get_cache_service)
@@ -144,7 +150,7 @@ async def delete_activity(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Activity not found")
     
-    # Invalidate the cache AFTER the DB write is successful
-    await cache_service.invalidate_dashboard_stats(organization_id)
+    # Schedule cache invalidation as background task
+    background_tasks.add_task(cache_service.invalidate_dashboard_stats, organization_id)
     
     return {"message": "Activity deleted successfully"}
