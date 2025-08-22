@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 from app.models.activity import Activity, ActivityCreate, ActivityUpdate
 from app.models.user import User
-from app.models.membership import MembershipRole
+from app.models.membership import MembershipRole, OrganizationContext
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context,
@@ -26,11 +26,11 @@ router = APIRouter(
 async def create_activity(
     activity: ActivityCreate,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database)
 ):
     """Create a new activity."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     # Verify contact exists in the same organization
     contact = await db.contacts.find_one({
@@ -64,11 +64,11 @@ async def create_activity(
 async def get_activities(
     contact_id: Optional[str] = None,
     deal_id: Optional[str] = None,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_viewer),
+    org_context: OrganizationContext = Depends(require_org_viewer),
     db=Depends(get_database)
 ):
     """Get activities with optional filtering by contact or deal."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     query = {"organization_id": organization_id}
     if contact_id:
@@ -83,11 +83,11 @@ async def get_activities(
 @router.get("/{activity_id}", response_model=Activity)
 async def get_activity(
     activity_id: str,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_viewer),
+    org_context: OrganizationContext = Depends(require_org_viewer),
     db=Depends(get_database)
 ):
     """Get a specific activity by ID."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     activity = await db.activities.find_one({
         "id": activity_id,
@@ -103,11 +103,11 @@ async def update_activity(
     activity_id: str,
     activity: ActivityUpdate,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database)
 ):
     """Update an activity."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     update_data = {k: v for k, v in activity.dict().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow()
@@ -134,11 +134,11 @@ async def update_activity(
 async def delete_activity(
     activity_id: str,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database)
 ):
     """Delete an activity."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     result = await db.activities.delete_one({
         "id": activity_id,

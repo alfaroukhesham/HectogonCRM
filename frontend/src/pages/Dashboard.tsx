@@ -9,6 +9,7 @@ import { useOrganization } from '../hooks/useOrganization';
 interface DashboardStats {
   total_contacts: number;
   total_deals: number;
+  total_activities: number;
   won_deals: number;
   total_revenue: number;
   pipeline_value: number;
@@ -22,6 +23,7 @@ const Dashboard: React.FC = () => {
   const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
     total_contacts: 0,
     total_deals: 0,
+    total_activities: 0,
     won_deals: 0,
     total_revenue: 0,
     pipeline_value: 0,

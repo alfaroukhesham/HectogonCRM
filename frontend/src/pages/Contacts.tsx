@@ -18,48 +18,41 @@ const Contacts: React.FC = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info' } | null>(null);
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
+  // Tracks "latest" request; increment to invalidate older responses
+  const requestIdRef = useRef(0);
 
   // Load data when organization context is ready
   useEffect(() => {
-    if (currentOrganization && !orgLoading && isMountedRef.current) {
-      loadContacts();
-    }
-  }, [currentOrganization, orgLoading]);
+    if (!currentOrganization || orgLoading) return;
+    // Kick off a load; cleanup invalidates any in-flight request
+    loadContacts();
+    return () => {
+      // Invalidate pending request to prevent state updates after unmount/org switch
+      requestIdRef.current++;
+    };
+  }, [currentOrganization?.id, orgLoading]);
 
   const loadContacts = async () => {
+    // Capture a unique id for this request
+    const requestId = ++requestIdRef.current;
     try {
-      if (!isMountedRef.current) return;
-      
       setIsLoading(true);
       setError(null);
-      console.log('Loading contacts...');
+
       const data = await api.getContacts();
-      console.log('Contacts loaded:', data);
-      
-      if (!isMountedRef.current) {
-        console.log('Component unmounted, skipping state update');
-        return;
-      }
-      
+      // Ignore out-of-date responses
+      if (requestId !== requestIdRef.current) return;
       setContacts(data);
-      console.log('Contacts state updated');
-    } catch (error) {
-      console.error('Error loading contacts:', error);
-      if (isMountedRef.current) {
-        setError('Failed to load contacts');
-      }
+    } catch (err) {
+      // Ignore errors from invalidated requests
+      if (requestId !== requestIdRef.current) return;
+      console.error('Error loading contacts:', err);
+      setError('Failed to load contacts');
     } finally {
-      // Always set loading to false, regardless of mount state
-      // This prevents getting stuck in loading state
-      setIsLoading(false);
-      console.log('Loading set to false');
+      // Only clear loading for the latest request
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 

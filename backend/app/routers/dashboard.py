@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.models.deal import DealStage
 from app.models.user import User
-from app.models.membership import MembershipRole
+from app.models.membership import MembershipRole, OrganizationContext
 from app.core.database import get_database
 from app.core.dependencies import get_current_active_user, get_organization_context, require_org_viewer
 from app.core.redis_client import get_redis_client
@@ -18,12 +18,13 @@ router = APIRouter(
 
 @router.get("/stats")
 async def get_dashboard_stats(
-    org_context: tuple[str, MembershipRole] = Depends(require_org_viewer),
+    org_context: OrganizationContext = Depends(require_org_viewer),
     db=Depends(get_database),
     redis_client: redis.Redis = Depends(get_redis_client)
 ):
     """Get dashboard statistics for the current organization."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
+    user_role = org_context.user_role
     
     # 1. Define a unique cache key for this organization's dashboard
     cache_key = f"dashboard:stats:{organization_id}"
@@ -38,6 +39,7 @@ async def get_dashboard_stats(
         # Get counts for current organization
         total_contacts = await db.contacts.count_documents({"organization_id": organization_id})
         total_deals = await db.deals.count_documents({"organization_id": organization_id})
+        total_activities = await db.activities.count_documents({"organization_id": organization_id})
         won_deals = await db.deals.count_documents({
             "organization_id": organization_id,
             "stage": DealStage.closed_won.value
@@ -76,6 +78,7 @@ async def get_dashboard_stats(
         stats = {
             "total_contacts": total_contacts,
             "total_deals": total_deals,
+            "total_activities": total_activities,
             "won_deals": won_deals,
             "total_revenue": total_revenue,
             "pipeline_value": pipeline_value,

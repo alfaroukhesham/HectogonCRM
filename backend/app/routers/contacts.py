@@ -4,7 +4,7 @@ from datetime import datetime
 
 from app.models.contact import Contact, ContactCreate, ContactUpdate
 from app.models.user import User
-from app.models.membership import MembershipRole
+from app.models.membership import MembershipRole, OrganizationContext
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context, 
@@ -23,12 +23,13 @@ router = APIRouter(
 async def create_contact(
     contact: ContactCreate,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database),
     services: CommonServices = Depends(get_common_services)
 ):
     """Create a new contact."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
+    user_role = org_context.user_role
     
     contact_dict = contact.dict()
     contact_dict["organization_id"] = organization_id
@@ -44,11 +45,11 @@ async def create_contact(
 @router.get("/", response_model=List[Contact])
 async def get_contacts(
     search: Optional[str] = None,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_viewer),
+    org_context: OrganizationContext = Depends(require_org_viewer),
     db=Depends(get_database)
 ):
     """Get all contacts with optional search."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     query = {"organization_id": organization_id}
     if search:
@@ -71,11 +72,11 @@ async def get_contacts(
 @router.get("/{contact_id}", response_model=Contact)
 async def get_contact(
     contact_id: str,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_viewer),
+    org_context: OrganizationContext = Depends(require_org_viewer),
     db=Depends(get_database)
 ):
     """Get a specific contact by ID."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     contact = await db.contacts.find_one({
         "id": contact_id,
@@ -91,11 +92,11 @@ async def update_contact(
     contact_id: str,
     contact: ContactUpdate,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database)
 ):
     """Update a contact."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     update_data = {k: v for k, v in contact.dict().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow()
@@ -122,12 +123,12 @@ async def update_contact(
 async def delete_contact(
     contact_id: str,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database),
     services: CommonServices = Depends(get_common_services)
 ):
     """Delete a contact."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     result = await db.contacts.delete_one({
         "id": contact_id,

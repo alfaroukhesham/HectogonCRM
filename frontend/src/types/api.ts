@@ -207,6 +207,7 @@ export interface ActivityUpdateRequest extends Partial<ActivityCreateRequest> {}
 export interface DashboardStats {
   total_contacts: number;
   total_deals: number;
+  total_activities: number;
   total_revenue: number;
   pipeline_value: number;
   deals_by_stage: Record<DealStage, number>;

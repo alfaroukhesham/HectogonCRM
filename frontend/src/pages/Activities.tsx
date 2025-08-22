@@ -14,53 +14,45 @@ const Activities: React.FC = () => {
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
+  // Tracks "latest" request; increment to invalidate older responses
+  const requestIdRef = useRef(0);
 
   // Load data when organization context is ready
   useEffect(() => {
-    if (currentOrganization && !orgLoading && isMountedRef.current) {
-      loadData();
-    }
-  }, [currentOrganization, orgLoading]);
+    if (!currentOrganization || orgLoading) return;
+    // Kick off a load; cleanup invalidates any in-flight request
+    loadData();
+    return () => {
+      // Invalidate pending request to prevent state updates after unmount/org switch
+      requestIdRef.current++;
+    };
+  }, [currentOrganization?.id, orgLoading]);
 
   const loadData = async () => {
+    // Capture a unique id for this request
+    const requestId = ++requestIdRef.current;
     try {
-      if (!isMountedRef.current) return;
-      
       setIsLoading(true);
       setError(null);
-      console.log('Loading activities and contacts...');
       const [activitiesData, contactsData] = await Promise.all([
         api.getActivities(),
         api.getContacts()
       ]);
-      console.log('Activities loaded:', activitiesData);
-      console.log('Contacts loaded:', contactsData);
       
-      if (!isMountedRef.current) {
-        console.log('Component unmounted, skipping state update');
-        return;
-      }
-      
+      // Ignore out-of-date responses
+      if (requestId !== requestIdRef.current) return;
       setActivities(activitiesData);
       setContacts(contactsData);
-      console.log('Activities and contacts state updated');
-    } catch (error) {
-      console.error('Error loading data:', error);
-      if (isMountedRef.current) {
-        setError('Failed to load activities and contacts');
-      }
+    } catch (err) {
+      // Ignore errors from invalidated requests
+      if (requestId !== requestIdRef.current) return;
+      console.error('Error loading data:', err);
+      setError('Failed to load activities and contacts');
     } finally {
-      // Always set loading to false, regardless of mount state
-      // This prevents getting stuck in loading state
-      setIsLoading(false);
-      console.log('Loading set to false');
+      // Only clear loading for the latest request
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 

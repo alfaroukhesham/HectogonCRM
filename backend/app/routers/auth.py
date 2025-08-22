@@ -49,12 +49,13 @@ from ..models.user import (
     EmailVerificationRequest,
     EmailVerificationConfirm
 )
-from ..core.dependencies import get_current_user
+from ..core.dependencies import get_current_user, get_redis_client
 from ..services.organization_service import OrganizationService
 from ..services.membership_service import MembershipService
 from ..services.invite_service import InviteService
 from ..models.organization import OrganizationCreate
 from ..models.membership import MembershipCreate, MembershipRole, MembershipStatus
+from jose import jwt, JWTError
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer()
@@ -750,25 +751,45 @@ async def refresh_token(request: RefreshTokenRequest, db=Depends(get_database)):
         )
 
 
-@router.post("/logout")
+@router.post("/logout", summary="Logout user and invalidate token")
 async def logout(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    refresh_token: str = None
+    redis_client = Depends(get_redis_client)
 ):
-    """Logout user (revoke tokens)."""
+    """
+    Invalidates the user's access token by adding its JTI to a denylist in Redis.
+    This fixes the 403 error by using the proper authentication flow.
+    """
     try:
-        # Revoke refresh token if provided
-        if refresh_token:
-            revoke_refresh_token(refresh_token)
         
-        # Note: Access tokens are stateless and expire naturally
-        # In a production system, you might want to maintain a blacklist
+        # Extract token from credentials
+        token = credentials.credentials
         
-        return {"message": "Logged out successfully"}
+        # Decode token to get JTI
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        jti = payload.get("jti")
         
+        if not jti:
+            # If for some reason a token has no JTI, we can't deny it,
+            # but we should still let the user log out.
+            return {"message": "Logout successful (token has no jti)"}
+
+        # The token is valid, so add its JTI to the denylist.
+        # Set the expiration to match the original token's lifetime.
+        token_lifetime = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        await redis_client.set(f"jti_denylist:{jti}", "revoked", ex=token_lifetime)
+
+        return {"message": "Logout successful"}
+        
+    except JWTError:
+        # If the token is already invalid (e.g., expired), the user is effectively
+        # logged out. We can return a success message.
+        return {"message": "Logout successful (token was already invalid)"}
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
-        return {"message": "Logged out successfully"}  # Always return success
+        return {"message": "Logout successful"}  # Always return success
 
 
 @router.post("/logout-all")

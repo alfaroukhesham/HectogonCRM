@@ -41,7 +41,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ contact, onSave, onCancel }) 
       }
       onSave();
     } catch (err) {
-      console.error('Error saving contact:', err);
+      console.error('📝 ContactForm: Error saving contact:', err);
       setError('Failed to save contact. Please try again.');
     } finally {
       setIsSubmitting(false);

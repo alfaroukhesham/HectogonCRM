@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.models.deal import Deal, DealCreate, DealUpdate, DealStage
 from app.models.user import User
-from app.models.membership import MembershipRole
+from app.models.membership import MembershipRole, OrganizationContext
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context,
@@ -23,12 +23,12 @@ router = APIRouter(
 async def create_deal(
     deal: DealCreate,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database),
     services: CommonServices = Depends(get_common_services)
 ):
     """Create a new deal."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     deal_dict = deal.dict()
     deal_dict["organization_id"] = organization_id
@@ -44,11 +44,11 @@ async def create_deal(
 @router.get("/", response_model=List[Deal])
 async def get_deals(
     stage: Optional[DealStage] = None,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_viewer),
+    org_context: OrganizationContext = Depends(require_org_viewer),
     db=Depends(get_database)
 ):
     """Get all deals with optional stage filter."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     query = {"organization_id": organization_id}
     if stage:
@@ -61,11 +61,11 @@ async def get_deals(
 @router.get("/{deal_id}", response_model=Deal)
 async def get_deal(
     deal_id: str,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_viewer),
+    org_context: OrganizationContext = Depends(require_org_viewer),
     db=Depends(get_database)
 ):
     """Get a specific deal by ID."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     deal = await db.deals.find_one({
         "id": deal_id,
@@ -81,12 +81,12 @@ async def update_deal(
     deal_id: str,
     deal: DealUpdate,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database),
     services: CommonServices = Depends(get_common_services)
 ):
     """Update a deal."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     update_data = {k: v for k, v in deal.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.now(timezone.utc)
@@ -116,12 +116,12 @@ async def update_deal(
 async def delete_deal(
     deal_id: str,
     background_tasks: BackgroundTasks,
-    org_context: tuple[str, MembershipRole] = Depends(require_org_editor),
+    org_context: OrganizationContext = Depends(require_org_editor),
     db=Depends(get_database),
     services: CommonServices = Depends(get_common_services)
 ):
     """Delete a deal."""
-    organization_id, user_role = org_context
+    organization_id = org_context.organization_id
     
     result = await db.deals.delete_one({
         "id": deal_id,

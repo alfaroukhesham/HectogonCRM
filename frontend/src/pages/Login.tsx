@@ -50,7 +50,7 @@ const Login = () => {
       if (accessToken && refreshToken) {
         try {
           await handleOAuthCallback(accessToken, refreshToken);
-          navigate('/dashboard', { replace: true });
+          navigate('/', { replace: true });
         } catch (error) {
           console.error('OAuth callback failed:', error);
           navigate('/login?error=oauth_callback_failed', { replace: true });
@@ -66,7 +66,7 @@ const Login = () => {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      navigate('/', { replace: true });
     }
   }, [isAuthenticated, navigate]);
 
@@ -133,7 +133,7 @@ const Login = () => {
       clearError();
       
       await login(credentials);
-      navigate('/dashboard', { replace: true });
+      navigate('/', { replace: true });
     } catch (error) {
       // Error is handled by the auth hook
       console.error('Login failed:', error);

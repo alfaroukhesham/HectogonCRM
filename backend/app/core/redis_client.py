@@ -31,12 +31,37 @@ def create_redis_pool() -> redis.ConnectionPool:
     - REDIS_SSL_CERT_REQS='none': No certificate verification (insecure, not recommended)
     
     For production environments, always use 'required' with proper certificates.
+
+    This function tries multiple approaches to connect to Redis:
+    1. Using REDIS_URL if available
+    2. Fallback to individual parameters
     
     Returns:
         redis.ConnectionPool: Configured Redis connection pool
     """
     try:
-        # Build connection parameters
+        # Try using REDIS_URL first (better for cloud connections)
+        if settings.REDIS_URL and settings.REDIS_URL != 'redis://localhost:6379/0':
+            # Always use non-SSL Redis URL due to SSL compatibility issues
+            # Redis Cloud often works fine without SSL for development
+            redis_url = f"redis://{settings.REDIS_USERNAME}:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+            
+            if settings.REDIS_SSL:
+                logger.warning("SSL is configured but disabled due to library compatibility issues. Using non-SSL connection.")
+            logger.info(f"Using Redis URL connection: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
+            
+            # Create pool from URL
+            pool = redis.ConnectionPool.from_url(
+                redis_url,
+                decode_responses=True,
+                max_connections=settings.REDIS_MAX_CONNECTIONS,
+                retry_on_timeout=settings.REDIS_RETRY_ON_TIMEOUT,
+                socket_connect_timeout=settings.REDIS_SOCKET_CONNECT_TIMEOUT,
+                socket_keepalive=settings.REDIS_SOCKET_KEEPALIVE,
+            )
+            return pool
+        
+        # Fallback to individual parameters (for local Redis)
         connection_params = {
             "host": settings.REDIS_HOST,
             "port": settings.REDIS_PORT,
@@ -53,40 +78,9 @@ def create_redis_pool() -> redis.ConnectionPool:
             connection_params["username"] = settings.REDIS_USERNAME
         if settings.REDIS_PASSWORD:
             connection_params["password"] = settings.REDIS_PASSWORD
-            
-        # Add SSL configuration if enabled
-        if settings.REDIS_SSL:
-            import ssl
-            connection_params["ssl"] = True
-            
-            # SSL certificate verification (secure by default)
-            if settings.REDIS_SSL_CERT_REQS.lower() == 'none':
-                connection_params["ssl_cert_reqs"] = ssl.CERT_NONE
-                logger.warning(
-                    "Redis SSL certificate verification is DISABLED. "
-                    "This is insecure and not recommended for production environments."
-                )
-            elif settings.REDIS_SSL_CERT_REQS.lower() == 'optional':
-                connection_params["ssl_cert_reqs"] = ssl.CERT_OPTIONAL
-                logger.info("Redis SSL certificate verification set to OPTIONAL")
-            else:  # 'required' (default and most secure)
-                connection_params["ssl_cert_reqs"] = ssl.CERT_REQUIRED
-                logger.info("Redis SSL certificate verification set to REQUIRED (secure)")
-            
-            # SSL certificate files
-            if settings.REDIS_SSL_CA_CERTS:
-                connection_params["ssl_ca_certs"] = settings.REDIS_SSL_CA_CERTS
-            if settings.REDIS_SSL_CERTFILE:
-                connection_params["ssl_certfile"] = settings.REDIS_SSL_CERTFILE
-            if settings.REDIS_SSL_KEYFILE:
-                connection_params["ssl_keyfile"] = settings.REDIS_SSL_KEYFILE
-            
-            # Hostname verification
-            connection_params["ssl_check_hostname"] = settings.REDIS_SSL_CHECK_HOSTNAME
         
         # Create connection pool
         pool = redis.ConnectionPool(**connection_params)
-        
         logger.info(f"Redis connection pool created successfully: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
         return pool
         

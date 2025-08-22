@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api } from '../utils/api';
 import { Organization, OrganizationMembership, MembershipRole, OrganizationCreateRequest } from '../types';
+import { useAuth } from './useAuth';
 
 interface OrganizationContextType {
   currentOrganization: Organization | null;
@@ -21,6 +22,7 @@ interface OrganizationProviderProps {
 }
 
 export const OrganizationProvider: React.FC<OrganizationProviderProps> = ({ children }) => {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [currentOrganization, setCurrentOrganization] = useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<OrganizationMembership[]>([]);
   const [userRole, setUserRole] = useState<MembershipRole | null>(null);
@@ -32,23 +34,18 @@ export const OrganizationProvider: React.FC<OrganizationProviderProps> = ({ chil
       setIsLoading(true);
       setError(null);
       
-      console.log('Loading organizations...');
       const orgs = await api.getOrganizations();
-      console.log('Organizations loaded:', orgs);
       
       setOrganizations(orgs);
       
       // If we have a current organization ID, validate it against available memberships
       const currentOrgId = api.getCurrentOrganization();
-      console.log('Current stored org ID:', currentOrgId);
-      console.log('Available organizations:', orgs.map(org => ({ id: org.organization_id, name: org.organization_name })));
       
       let targetOrgId = null;
       
       if (currentOrgId && orgs.length > 0) {
         const currentMembership = orgs.find(org => org.organization_id === currentOrgId);
         if (currentMembership) {
-          console.log('Found matching membership for stored org ID');
           targetOrgId = currentOrgId;
         } else {
           console.warn('Stored organization ID not found in user memberships, clearing it');
@@ -58,22 +55,22 @@ export const OrganizationProvider: React.FC<OrganizationProviderProps> = ({ chil
       
       // If no valid current org, use first available
       if (!targetOrgId && orgs.length > 0) {
-        targetOrgId = orgs[0].organization_id;
-        console.log('Using first available organization:', targetOrgId);
+        const firstOrg = orgs[0];
+        if (firstOrg) {
+          targetOrgId = firstOrg.organization_id;
+        }
       }
       
       if (targetOrgId) {
         const membership = orgs.find(org => org.organization_id === targetOrgId);
         if (membership) {
           try {
-            console.log('Loading organization details for:', targetOrgId);
             const orgDetails = await api.getOrganization(targetOrgId);
             setCurrentOrganization(orgDetails);
             setUserRole(membership.role);
             
             // Update API client's current organization
             api.setCurrentOrganization(targetOrgId);
-            console.log('Successfully set organization context');
           } catch (err) {
             console.error('Failed to load organization details:', err);
             setError(`Failed to load organization details: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -110,14 +107,12 @@ export const OrganizationProvider: React.FC<OrganizationProviderProps> = ({ chil
         throw new Error('Organization not found in your memberships');
       }
       
-      console.log('Switching to organization:', organizationId);
       const orgDetails = await api.getOrganization(organizationId);
       setCurrentOrganization(orgDetails);
       setUserRole(membership.role);
       
       // Update API client's current organization
       api.setCurrentOrganization(organizationId);
-      console.log('Organization switched successfully');
     } catch (err) {
       console.error('Error switching organization:', err);
       setError(err instanceof Error ? err.message : 'Failed to switch organization');
@@ -144,8 +139,26 @@ export const OrganizationProvider: React.FC<OrganizationProviderProps> = ({ chil
     loadOrganizations();
   };
 
-    useEffect(() => {
+  useEffect(() => {
     const initializeOrganizations = async () => {
+      // If auth is still loading, wait
+      if (authLoading) {
+        setIsLoading(true);
+        return;
+      }
+      
+      // Only load organizations if user is authenticated
+      if (!isAuthenticated) {
+        // If not authenticated, set loading to false and clear any previous state
+        setIsLoading(false);
+        setCurrentOrganization(null);
+        setOrganizations([]);
+        setUserRole(null);
+        setError(null);
+        return;
+      }
+
+
       try {
         await loadOrganizations();
       } catch (error) {
@@ -157,7 +170,7 @@ export const OrganizationProvider: React.FC<OrganizationProviderProps> = ({ chil
     };
 
     initializeOrganizations();
-  }, []);
+  }, [isAuthenticated, authLoading]);
 
   const value: OrganizationContextType = {
     currentOrganization,

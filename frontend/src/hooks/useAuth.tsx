@@ -197,32 +197,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logout = async () => {
     try {
-      const tokens = state.tokens;
-      
-      // Clear local state first
-      setState({
-        user: null,
-        tokens: null,
-        isLoading: false,
-        isAuthenticated: false,
-        error: null,
-      });
-
-      // Clear storage
-      localStorage.removeItem('auth_tokens');
-      localStorage.removeItem('auth_user');
-
-      // Call logout API
-      if (tokens?.refresh_token) {
-        try {
-          await api.logout(tokens.refresh_token);
-        } catch (error) {
-          console.warn('Logout API call failed:', error);
-        }
+      // 1. Tell the backend to invalidate the current token.
+      // This is a "fire-and-forget" call. We don't need to wait for the
+      // response or handle errors, because we want to log the user
+      // out on the frontend regardless of whether the server call succeeds.
+      try {
+        await api.logout();
+      } catch (error) {
+        // Log the error for debugging, but don't block the logout process.
+        console.error("Server-side logout failed, proceeding with client-side logout:", error);
       }
     } catch (error) {
       console.error('Logout failed:', error);
-      // Still clear local state even if API call fails
+    } finally {
+      // 2. Perform the client-side logout as before.
       setState({
         user: null,
         tokens: null,

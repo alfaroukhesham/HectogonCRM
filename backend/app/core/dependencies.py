@@ -22,10 +22,45 @@ security = HTTPBearer()
 
 
 async def get_current_user_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    redis_client: Redis = Depends(get_redis_client)
 ) -> TokenData:
-    """Get current user from JWT token."""
+    """Get current user from JWT token and check denylist."""
+    from jose import jwt, JWTError
+    from app.core.config import settings
+    
     token = credentials.credentials
+    
+    try:
+        # Decode JWT to get JTI
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        jti = payload.get("jti")
+        
+        # Check if token's JTI is in the denylist (with Redis error handling)
+        if jti:
+            try:
+                is_denied = await redis_client.get(f"jti_denylist:{jti}")
+                if is_denied:
+                    # Token has been revoked
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token has been revoked",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            except Exception as redis_error:
+                # If Redis is down, log the error but don't fail authentication
+                # This ensures the system remains functional even if Redis is unavailable
+                import logging
+                logging.warning(f"Redis error during token denylist check: {redis_error}")
+                # Continue with normal token validation
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Use existing verify_token function for standard validation
     token_data = verify_token(token)
     
     if token_data is None:

@@ -146,12 +146,12 @@ class ApiClient {
       };
     }
 
-    // Removed debug logging
+
 
     try {
       const response = await fetch(url, config);
       
-      // Removed debug logging
+
       
       // Handle 401 errors - try to refresh token
       if (response.status === 401 && authTokens?.refresh_token && !endpoint.includes('/auth/refresh')) {
@@ -232,17 +232,10 @@ class ApiClient {
     }
   }
 
-  async logout(refreshToken?: string): Promise<void> {
-    if (refreshToken) {
-      try {
-        await this.request<void>('/auth/logout', {
-          method: 'POST',
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-      } catch (error) {
-        console.warn('Logout API call failed:', error);
-      }
-    }
+  async logout(): Promise<void> {
+    return this.request<void>('/auth/logout', {
+      method: 'POST',
+    });
   }
 
   async logoutAll(): Promise<void> {
@@ -308,7 +301,7 @@ class ApiClient {
 
   // Organization endpoints
   async getOrganizations(): Promise<OrganizationMembership[]> {
-    return this.request<OrganizationMembership[]>('/organizations');
+    return this.request<OrganizationMembership[]>('/organizations/');
   }
 
   async getOrganization(id: string): Promise<Organization> {
@@ -316,7 +309,7 @@ class ApiClient {
   }
 
   async createOrganization(data: OrganizationCreateRequest): Promise<Organization> {
-    return this.request<Organization>('/organizations', {
+    return this.request<Organization>('/organizations/', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -341,7 +334,7 @@ class ApiClient {
   }
 
   async createInvitation(data: InvitationCreateRequest): Promise<Invitation> {
-    return this.request<Invitation>('/invites', {
+    return this.request<Invitation>('/invites/', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -394,7 +387,7 @@ class ApiClient {
 
   // Contact endpoints
   async getContacts(): Promise<any[]> {
-    return this.request<any[]>('/contacts');
+    return this.request<any[]>('/contacts/');
   }
 
   async getContact(id: string): Promise<any> {
@@ -402,7 +395,7 @@ class ApiClient {
   }
 
   async createContact(contact: any): Promise<any> {
-    return this.request<any>('/contacts', {
+    return this.request<any>('/contacts/', {
       method: 'POST',
       body: JSON.stringify(contact),
     });
@@ -423,7 +416,7 @@ class ApiClient {
 
   // Deal endpoints
   async getDeals(): Promise<any[]> {
-    return this.request<any[]>('/deals');
+    return this.request<any[]>('/deals/');
   }
 
   async getDeal(id: string): Promise<any> {
@@ -431,7 +424,7 @@ class ApiClient {
   }
 
   async createDeal(deal: any): Promise<any> {
-    return this.request<any>('/deals', {
+    return this.request<any>('/deals/', {
       method: 'POST',
       body: JSON.stringify(deal),
     });
@@ -452,7 +445,7 @@ class ApiClient {
 
   // Activity endpoints
   async getActivities(): Promise<any[]> {
-    return this.request<any[]>('/activities');
+    return this.request<any[]>('/activities/');
   }
 
   async getActivity(id: string): Promise<any> {
@@ -460,7 +453,7 @@ class ApiClient {
   }
 
   async createActivity(activity: any): Promise<any> {
-    return this.request<any>('/activities', {
+    return this.request<any>('/activities/', {
       method: 'POST',
       body: JSON.stringify(activity),
     });

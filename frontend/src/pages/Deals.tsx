@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Deal, Contact } from '../types';
 import { formatCurrency, getStageColor } from '../utils/formatters';
 import Modal from '../components/Modal';
@@ -14,15 +14,23 @@ const Deals: React.FC = () => {
   const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tracks "latest" request; increment to invalidate older responses
+  const requestIdRef = useRef(0);
 
   // Load data when organization context is ready
   useEffect(() => {
-    if (currentOrganization && !orgLoading) {
-      loadData();
-    }
-  }, [currentOrganization, orgLoading]);
+    if (!currentOrganization || orgLoading) return;
+    // Kick off a load; cleanup invalidates any in-flight request
+    loadData();
+    return () => {
+      // Invalidate pending request to prevent state updates after unmount/org switch
+      requestIdRef.current++;
+    };
+  }, [currentOrganization?.id, orgLoading]);
 
   const loadData = async () => {
+    // Capture a unique id for this request
+    const requestId = ++requestIdRef.current;
     try {
       setIsLoading(true);
       setError(null);
@@ -30,13 +38,21 @@ const Deals: React.FC = () => {
         api.getDeals(),
         api.getContacts()
       ]);
+      
+      // Ignore out-of-date responses
+      if (requestId !== requestIdRef.current) return;
       setDeals(dealsData);
       setContacts(contactsData);
-    } catch (error) {
-      console.error('Error loading data:', error);
+    } catch (err) {
+      // Ignore errors from invalidated requests
+      if (requestId !== requestIdRef.current) return;
+      console.error('Error loading data:', err);
       setError('Failed to load deals and contacts');
     } finally {
-      setIsLoading(false);
+      // Only clear loading for the latest request
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
