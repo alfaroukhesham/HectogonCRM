@@ -1,11 +1,11 @@
 from typing import List, Optional
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.database import get_database
 from app.core.dependencies import (
     get_current_active_user, get_organization_context, require_org_admin,
-    get_membership_service
+    get_membership_service, get_cache_service
 )
 from app.core.email import EmailService
 from app.models.user import User
@@ -16,13 +16,15 @@ from app.models.invite import (
 from app.models.membership import MembershipRole
 from app.services.invite_service import InviteService
 from app.services.membership_service import MembershipService
+from app.services.cache_service import CacheService
 
 
 router = APIRouter(prefix="/invites", tags=["invites"])
+logger = logging.getLogger(__name__)
 
 
 async def get_invite_service(
-    db: AsyncIOMotorDatabase = Depends(get_database)
+    db = Depends(get_database)
 ) -> InviteService:
     """Get invite service."""
     email_service = EmailService()
@@ -235,7 +237,8 @@ async def resend_invite(
 async def accept_invite(
     invite_data: InviteAccept,
     current_user: User = Depends(get_current_active_user),
-    invite_service: InviteService = Depends(get_invite_service)
+    invite_service: InviteService = Depends(get_invite_service),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Accept an invite."""
     try:
@@ -245,6 +248,13 @@ async def accept_invite(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired invite code"
             )
+        
+        # Best-effort cache invalidation; don't block acceptance on cache errors
+        try:
+            await cache_service.invalidate_user_memberships(current_user.id)
+            logger.info(f"Successfully invalidated membership cache for user {current_user.id} after invite acceptance")
+        except Exception as cache_error:
+            logger.warning(f"Failed to invalidate membership cache for user {current_user.id}: {cache_error}. Invite acceptance succeeded anyway.")
         
         return {
             "message": "Invite accepted successfully",
@@ -262,7 +272,7 @@ async def accept_invite(
 async def get_invite_info(
     code: str,
     invite_service: InviteService = Depends(get_invite_service),
-    db: AsyncIOMotorDatabase = Depends(get_database)
+    db = Depends(get_database)
 ):
     """Get invite information by code (for preview before accepting)."""
     invite = await invite_service.get_invite_by_code(code)

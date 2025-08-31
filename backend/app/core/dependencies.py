@@ -261,9 +261,11 @@ async def get_organization_service(
 async def get_membership_service(
     db: Any = Depends(get_database)
 ) -> Any:
-    """Get membership service."""
+    """Get membership service with cache support."""
     from app.services.membership_service import MembershipService
-    return MembershipService(db)
+    from app.services.cache_service import CacheService
+    cache_service = CacheService(get_redis_client())
+    return MembershipService(db, cache_service)
 
 
 async def get_redis() -> Redis:

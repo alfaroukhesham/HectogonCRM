@@ -49,10 +49,11 @@ from ..models.user import (
     EmailVerificationRequest,
     EmailVerificationConfirm
 )
-from ..core.dependencies import get_current_user, get_redis_client
+from ..core.dependencies import get_current_user, get_redis_client, get_cache_service
 from ..services.organization_service import OrganizationService
 from ..services.membership_service import MembershipService
 from ..services.invite_service import InviteService
+from ..services.cache_service import CacheService
 from ..models.organization import OrganizationCreate
 from ..models.membership import MembershipCreate, MembershipRole, MembershipStatus
 from jose import jwt, JWTError
@@ -204,7 +205,11 @@ async def register(user_data: UserCreate, db=Depends(get_database)):
 
 
 @router.post("/login", response_model=Token)
-async def login(user_credentials: UserLogin, db=Depends(get_database)):
+async def login(
+    user_credentials: UserLogin, 
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Authenticate user with email and password."""
     try:
         # Find user by email
@@ -251,6 +256,12 @@ async def login(user_credentials: UserLogin, db=Depends(get_database)):
             data={"sub": str(user_doc["_id"]), "email": user.email}
         )
         refresh_token = create_refresh_token(str(user_doc["_id"]))
+        
+        # Store the refresh token in Redis with a TTL
+        await cache_service.store_refresh_token(
+            user_id=str(user_doc["_id"]),
+            token=refresh_token
+        )
         
         return Token(
             access_token=access_token,
@@ -553,7 +564,8 @@ async def oauth_callback(
     code: str, 
     state: str, 
     error: str = None,
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Handle OAuth callback."""
     try:
@@ -680,6 +692,12 @@ async def oauth_callback(
         )
         refresh_token = create_refresh_token(user_id)
         
+        # Store the refresh token in Redis with a TTL
+        await cache_service.store_refresh_token(
+            user_id=user_id,
+            token=refresh_token
+        )
+        
         # Redirect to frontend with tokens
         return RedirectResponse(
             url=f"{settings.FRONTEND_URL}/oauth/callback?access_token={access_token}&refresh_token={refresh_token}",
@@ -695,15 +713,29 @@ async def oauth_callback(
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(request: RefreshTokenRequest, db=Depends(get_database)):
+async def refresh_token(
+    request: RefreshTokenRequest, 
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Refresh access token."""
     try:
-        # Verify refresh token
+        # First, try to decode the refresh token to get the user ID
         user_id = verify_refresh_token(request.refresh_token)
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
+                detail="Invalid or expired refresh token"
+            )
+
+        # Get the valid refresh token from Redis
+        valid_token = await cache_service.get_refresh_token(user_id=user_id)
+
+        # Compare the tokens
+        if not valid_token or valid_token != request.refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
             )
         
         # Get user from database
@@ -731,7 +763,13 @@ async def refresh_token(request: RefreshTokenRequest, db=Depends(get_database)):
         )
         new_refresh_token = create_refresh_token(user_id)
         
-        # Revoke old refresh token
+        # Store the new refresh token in Redis and revoke the old one
+        await cache_service.store_refresh_token(
+            user_id=user_id,
+            token=new_refresh_token
+        )
+        
+        # Also revoke old refresh token from the in-memory store for backward compatibility
         revoke_refresh_token(request.refresh_token)
         
         return Token(
@@ -793,10 +831,14 @@ async def logout(
 
 
 @router.post("/logout-all")
-async def logout_all(current_user: User = Depends(get_current_user)):
+async def logout_all(
+    current_user: User = Depends(get_current_user),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Logout from all devices (revoke all refresh tokens)."""
     try:
-        # Revoke all refresh tokens for the user
+        # Revoke all refresh tokens for the user from both Redis and in-memory store
+        await cache_service.revoke_refresh_token(current_user.id)
         revoke_all_user_refresh_tokens(current_user.id)
         
         return {"message": "Logged out from all devices successfully"}

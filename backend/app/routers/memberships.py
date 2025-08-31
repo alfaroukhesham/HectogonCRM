@@ -1,9 +1,10 @@
 from typing import List, Optional
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.dependencies import (
     get_current_active_user, get_organization_context, require_org_admin,
-    get_membership_service
+    get_membership_service, get_cache_service
 )
 from app.models.user import User
 from app.models.membership import (
@@ -11,9 +12,11 @@ from app.models.membership import (
     MembershipRole, MembershipStatus
 )
 from app.services.membership_service import MembershipService
+from app.services.cache_service import CacheService
 
 
 router = APIRouter(prefix="/memberships", tags=["memberships"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=List[UserMembershipResponse])
@@ -74,7 +77,8 @@ async def update_membership(
     membership_data: MembershipUpdate,
     current_user: User = Depends(get_current_active_user),
     org_context: tuple[str, MembershipRole] = Depends(require_org_admin),
-    membership_service: MembershipService = Depends(get_membership_service)
+    membership_service: MembershipService = Depends(get_membership_service),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Update membership (admin only)."""
     org_id, user_role = org_context
@@ -108,6 +112,13 @@ async def update_membership(
             detail="Membership not found"
         )
     
+    # Best-effort cache invalidation; don't block membership update on cache errors
+    try:
+        await cache_service.invalidate_user_memberships(existing_membership.user_id)
+        logger.info(f"Successfully invalidated membership cache for user {existing_membership.user_id} after role update")
+    except Exception as cache_error:
+        logger.warning(f"Failed to invalidate membership cache for user {existing_membership.user_id}: {cache_error}. Membership update succeeded anyway.")
+    
     return MembershipResponse(**membership.dict())
 
 
@@ -116,7 +127,8 @@ async def remove_member(
     membership_id: str,
     current_user: User = Depends(get_current_active_user),
     org_context: tuple[str, MembershipRole] = Depends(require_org_admin),
-    membership_service: MembershipService = Depends(get_membership_service)
+    membership_service: MembershipService = Depends(get_membership_service),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Remove member from organization (admin only)."""
     org_id, user_role = org_context
@@ -160,6 +172,13 @@ async def remove_member(
             detail="Membership not found"
         )
     
+    # Best-effort cache invalidation; don't block member removal on cache errors
+    try:
+        await cache_service.invalidate_user_memberships(existing_membership.user_id)
+        logger.info(f"Successfully invalidated membership cache for user {existing_membership.user_id} after removal")
+    except Exception as cache_error:
+        logger.warning(f"Failed to invalidate membership cache for user {existing_membership.user_id}: {cache_error}. Member removal succeeded anyway.")
+    
     return {"message": "Member removed successfully"}
 
 
@@ -167,7 +186,8 @@ async def remove_member(
 async def leave_organization(
     current_user: User = Depends(get_current_active_user),
     org_context: tuple[str, MembershipRole] = Depends(get_organization_context),
-    membership_service: MembershipService = Depends(get_membership_service)
+    membership_service: MembershipService = Depends(get_membership_service),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Leave the current organization."""
     org_id, user_role = org_context
@@ -197,5 +217,12 @@ async def leave_organization(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Membership not found"
         )
+    
+    # Best-effort cache invalidation; don't block leaving organization on cache errors
+    try:
+        await cache_service.invalidate_user_memberships(current_user.id)
+        logger.info(f"Successfully invalidated membership cache for user {current_user.id} after leaving organization")
+    except Exception as cache_error:
+        logger.warning(f"Failed to invalidate membership cache for user {current_user.id}: {cache_error}. Leaving organization succeeded anyway.")
     
     return {"message": "Successfully left the organization"} 

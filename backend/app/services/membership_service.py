@@ -6,6 +6,7 @@ import logging
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
+    from app.services.cache_service import CacheService
 
 from app.models.membership import (
     Membership, MembershipCreate, MembershipUpdate, MembershipResponse,
@@ -20,11 +21,12 @@ logger = logging.getLogger(__name__)
 class MembershipService:
     """Service for membership operations."""
     
-    def __init__(self, db: Any):
+    def __init__(self, db: Any, cache_service: Optional[Any] = None):
         self.db = db
         self.collection = db.memberships
         self.users_collection = db.users
         self.organizations_collection = db.organizations
+        self.cache_service = cache_service
     
     async def create_membership(
         self, 
@@ -134,6 +136,18 @@ class MembershipService:
         try:
             logger.info(f"Getting memberships for user: {user_id}, status: {status}")
             
+            # 1. Check cache first if cache service is available and no status filter
+            if self.cache_service and not status:
+                cached_memberships = await self.cache_service.get_cached_user_memberships(user_id)
+                if cached_memberships is not None:
+                    logger.info(f"Found {len(cached_memberships)} cached memberships for user {user_id}")
+                    # Convert cached data back to OrganizationMembershipResponse objects
+                    return [
+                        OrganizationMembershipResponse(**membership) 
+                        for membership in cached_memberships
+                    ]
+            
+            # 2. If cache miss or status filter, query the database
             # Build match query
             match_query = {"user_id": user_id}
             if status:
@@ -199,6 +213,12 @@ class MembershipService:
                 except Exception as e:
                     logger.error(f"Error processing membership document: {doc}, error: {str(e)}")
                     continue
+            
+            # 3. Cache the result before returning (only if no status filter and cache service available)
+            if self.cache_service and not status and memberships:
+                # Convert to serializable format for caching
+                memberships_data = [membership.model_dump() for membership in memberships]
+                await self.cache_service.cache_user_memberships(user_id, memberships_data)
             
             logger.info(f"Returning {len(memberships)} memberships for user {user_id}")
             return memberships
