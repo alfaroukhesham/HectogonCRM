@@ -1,0 +1,167 @@
+---
+globs: backend/app/models/membership.py,backend/app/models/organization.py,backend/app/routers/memberships.py
+description: Multi-tenant architecture patterns and organization management
+---
+
+# Multi-tenant Architecture Patterns
+
+## Organization Model
+```python
+class Organization(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    name: str
+    slug: str  # URL-friendly identifier
+    logo_url: Optional[str]
+    owner_id: str  # User who created the organization
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+```
+
+## Membership Model
+```python
+class Membership(BaseModel):
+    user_id: str
+    organization_id: str
+    role: MembershipRole  # ADMIN, EDITOR, VIEWER
+    status: MembershipStatus  # ACTIVE, INACTIVE, PENDING, SUSPENDED
+    joined_at: datetime
+    last_accessed: Optional[datetime]
+```
+
+## Role Hierarchy
+```python
+class MembershipRole(str, Enum):
+    ADMIN = "admin"    # Full access
+    EDITOR = "editor"  # Create/edit access
+    VIEWER = "viewer"  # Read-only access
+```
+
+## Permission Checking
+```python
+async def require_org_admin(
+    org_context: tuple[str, MembershipRole] = Depends(get_org_context)
+) -> tuple[str, MembershipRole]:
+    org_id, user_role = org_context
+    if user_role != MembershipRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return org_context
+```
+
+## Organization Context
+```python
+async def get_org_context(
+    org_id: str = Path(..., description="Organization ID"),
+    current_user: User = Depends(get_current_user),
+    membership_service: MembershipService = Depends(get_membership_service)
+) -> tuple[str, MembershipRole]:
+    # Validate user is member of organization
+    membership = await membership_service.get_membership(
+        current_user.id, org_id
+    )
+    if not membership or membership.status != MembershipStatus.ACTIVE:
+        raise HTTPException(status_code=403, detail="Not a member of this organization")
+
+    return org_id, membership.role
+```
+
+## Data Scoping
+```python
+# Always scope queries by organization
+contacts = await db.contacts.find({
+    "organization_id": org_id,
+    "user_id": current_user.id  # Optional: further restrict to user
+}).to_list(None)
+
+# Validate organization access before operations
+async def create_contact(org_id: str, contact_data: ContactCreate):
+    # Verify user has access to organization
+    membership = await membership_service.check_user_role(
+        current_user.id, org_id
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    contact_data.organization_id = org_id
+    return await db.contacts.insert_one(contact_data.dict())
+```
+
+## Cache Organization Scoping
+```python
+# Use organization-scoped cache keys
+cache_key = f"user_memberships:{org_id}:{user_id}"
+
+# Organization-level cache invalidation
+await cache_service.invalidate_organization_members_cache(org_id)
+# Safely invalidates only: user_memberships:{org_id}:*
+```
+
+## Default Organization Creation
+```python
+async def create_default_organization(user_id: str, user_name: str):
+    # Create organization with user's name
+    org_name = f"{user_name}'s Organization"
+    org_slug = generate_unique_slug(org_name)
+
+    organization = Organization(
+        name=org_name,
+        slug=org_slug,
+        owner_id=user_id
+    )
+
+    result = await db.organizations.insert_one(organization.dict())
+    org_id = str(result.inserted_id)
+
+    # Create admin membership for user
+    membership = MembershipCreate(
+        user_id=user_id,
+        organization_id=org_id,
+        role=MembershipRole.ADMIN
+    )
+    await membership_service.create_membership(membership)
+
+    return organization
+```
+
+## Invitation System
+```python
+class Invite(BaseModel):
+    organization_id: str
+    invited_email: str
+    invited_by: str  # User ID who sent invite
+    role: MembershipRole
+    status: InviteStatus  # PENDING, ACCEPTED, EXPIRED, REVOKED
+    expires_at: datetime
+    code: str  # Unique invitation code
+```
+
+## Membership Management
+- **Role changes**: Only admins can modify member roles
+- **Member removal**: Admins can remove members, users can leave
+- **Access tracking**: Update `last_accessed` on organization operations
+- **Status management**: Handle pending, active, suspended memberships
+
+## Security Considerations
+- **Resource isolation**: Always validate organization membership
+- **Permission escalation**: Prevent users from accessing other orgs' data
+- **Audit logging**: Track organization membership changes
+- **Data cleanup**: Handle organization deletion and member cleanup
+
+## API Patterns
+```python
+# Organization-scoped routes
+@router.get("/organizations/{org_id}/contacts")
+async def get_contacts(
+    org_id: str,
+    org_context: tuple[str, MembershipRole] = Depends(require_org_member)
+):
+    # org_context ensures user is member of org_id
+    org_id, user_role = org_context
+    # Proceed with operation
+```
+
+## Testing Multi-tenant Code
+- **Organization fixtures**: Create test organizations
+- **Membership fixtures**: Set up test users with appropriate roles
+- **Permission testing**: Test different role access patterns
+- **Isolation testing**: Ensure data isolation between organizations

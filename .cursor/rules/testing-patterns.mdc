@@ -1,0 +1,224 @@
+---
+globs: backend/test_*.py,backend/app/**/*.py
+description: Testing patterns and best practices for the backend
+---
+
+# Testing Patterns
+
+## Test File Organization
+- **Integration tests**: `test_redis_integration.py` for Redis operations
+- **Unit tests**: Test individual functions and services
+- **API tests**: Test FastAPI routes and endpoints
+- **Fixture management**: Use pytest fixtures for common setup
+
+## Redis Integration Testing
+```python
+async def test_redis_integration():
+    # Test data setup
+    test_user_id = "test_user_123"
+    test_token = "test_refresh_token"
+
+    # Test operations
+    await cache_service.store_refresh_token(test_user_id, test_token)
+    retrieved = await cache_service.get_refresh_token(test_user_id)
+    assert retrieved == test_token
+
+    # Cleanup
+    await cache_service.revoke_refresh_token(test_user_id)
+```
+
+## Service Testing
+```python
+async def test_membership_service():
+    # Mock dependencies
+    mock_db = AsyncMock()
+    mock_cache = AsyncMock()
+    service = MembershipService(mock_db, mock_cache)
+
+    # Test business logic
+    membership = await service.get_membership(user_id, org_id)
+    assert membership is not None
+    assert membership.role == MembershipRole.ADMIN
+```
+
+## FastAPI Route Testing
+```python
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+def test_auth_endpoint():
+    response = client.post("/auth/login", json={
+        "email": "test@example.com",
+        "password": "password"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+```
+
+## Database Testing
+```python
+async def test_database_operations():
+    # Use test database
+    test_db = get_test_database()
+
+    # Setup test data
+    await test_db.users.insert_one({
+        "email": "test@example.com",
+        "full_name": "Test User"
+    })
+
+    # Test operations
+    user = await test_db.users.find_one({"email": "test@example.com"})
+    assert user is not None
+
+    # Cleanup
+    await test_db.users.delete_many({})
+```
+
+## Mock Patterns
+```python
+from unittest.mock import AsyncMock, MagicMock
+
+async def test_with_mocks():
+    # Mock Redis client
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = b'{"test": "data"}'
+
+    # Mock database
+    mock_db = AsyncMock()
+    mock_db.find_one.return_value = {"_id": "123", "name": "test"}
+
+    # Test service with mocks
+    service = MyService(mock_db, mock_redis)
+    result = await service.get_data()
+    assert result["name"] == "test"
+```
+
+## Authentication Testing
+```python
+async def test_protected_route():
+    # Create test user and token
+    user = User(id="test_user", email="test@example.com")
+    access_token = create_access_token({"sub": user.id, "email": user.email})
+
+    # Test authenticated request
+    response = client.get(
+        "/protected/route",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert response.status_code == 200
+```
+
+## Organization Testing
+```python
+async def test_multi_tenant_operations():
+    # Create test organization
+    org = await create_test_organization()
+
+    # Create test user membership
+    membership = Membership(
+        user_id="test_user",
+        organization_id=org.id,
+        role=MembershipRole.ADMIN
+    )
+    await db.memberships.insert_one(membership.dict())
+
+    # Test organization-scoped operation
+    response = client.get(
+        f"/organizations/{org.id}/data",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert response.status_code == 200
+```
+
+## Cache Testing
+```python
+async def test_cache_operations():
+    # Test cache miss
+    cached = await cache_service.get_cached_data("nonexistent")
+    assert cached is None
+
+    # Test cache write
+    await cache_service.cache_data("test_key", {"data": "value"})
+    cached = await cache_service.get_cached_data("test_key")
+    assert cached["data"] == "value"
+
+    # Test cache invalidation
+    await cache_service.invalidate_data("test_key")
+    cached = await cache_service.get_cached_data("test_key")
+    assert cached is None
+```
+
+## Error Testing
+```python
+async def test_error_conditions():
+    # Test invalid input
+    response = client.post("/users", json={"invalid": "data"})
+    assert response.status_code == 422
+
+    # Test unauthorized access
+    response = client.get("/protected/route")
+    assert response.status_code == 401
+
+    # Test forbidden access
+    response = client.get(
+        "/admin/route",
+        headers={"Authorization": f"Bearer {user_token}"}
+    )
+    assert response.status_code == 403
+```
+
+## Test Fixtures
+```python
+@pytest.fixture
+async def test_user():
+    user_data = {
+        "email": "test@example.com",
+        "full_name": "Test User",
+        "password_hash": get_password_hash("password")
+    }
+    result = await db.users.insert_one(user_data)
+    user_data["_id"] = result.inserted_id
+    yield User(**user_data)
+    await db.users.delete_one({"_id": result.inserted_id})
+
+@pytest.fixture
+async def test_organization(test_user):
+    org_data = {
+        "name": "Test Organization",
+        "owner_id": str(test_user.id)
+    }
+    result = await db.organizations.insert_one(org_data)
+    org_data["_id"] = result.inserted_id
+    yield Organization(**org_data)
+    await db.organizations.delete_one({"_id": result.inserted_id})
+```
+
+## Test Database Setup
+```python
+@pytest.fixture(scope="session")
+async def test_database():
+    # Use test database
+    db = get_database("test_db")
+    yield db
+    # Cleanup after all tests
+    await db.drop_database("test_db")
+```
+
+## Async Test Patterns
+```python
+@pytest.mark.asyncio
+async def test_async_operation():
+    # Test async functions
+    result = await async_service_operation()
+    assert result is not None
+
+# Or use pytest-asyncio
+async def test_with_auto_mark():
+    result = await async_operation()
+    assert result.success
+```

@@ -1,0 +1,47 @@
+---
+globs: backend/app/routers/*.py
+description: FastAPI router patterns and best practices for this codebase
+---
+
+# FastAPI Router Patterns
+
+## Router Structure
+- Use `APIRouter` with prefixes and tags for logical grouping
+- Follow RESTful conventions with clear resource naming
+- Use dependency injection for shared services and authentication
+
+## Route Definitions
+```python
+@router.get("/{resource_id}", response_model=ResponseModel)
+async def get_resource(
+    resource_id: str,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_database),
+    service: ServiceClass = Depends(get_service)
+) -> ResponseModel:
+```
+
+## Key Patterns Used
+- **Functional routes**: Prefer plain functions over class-based views
+- **Dependency injection**: Use FastAPI's DI for database, cache, and services
+- **Type hints**: Full type annotations for all parameters and return types
+- **Pydantic models**: Use BaseModel subclasses for request/response validation
+- **Async/await**: Use async functions for all I/O operations
+
+## Error Handling
+- Use `HTTPException` for expected errors with appropriate status codes
+- Handle edge cases at the beginning of functions with early returns
+- Log errors appropriately without exposing sensitive information
+- Return user-friendly error messages
+
+## Authentication Patterns
+- Use `Depends(get_current_user)` for protected routes
+- Validate permissions early in route handlers
+- Use organization context for multi-tenant operations
+- Implement proper token validation and refresh logic
+
+## Database Operations
+- Use async database operations throughout
+- Implement proper error handling for database failures
+- Use transactions for multi-step operations
+- Follow the repository pattern through service layers

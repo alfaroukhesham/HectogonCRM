@@ -1,0 +1,188 @@
+---
+alwaysApply: true
+description: General backend architecture patterns and coding standards
+---
+
+# Backend Architecture Patterns
+
+## Project Structure
+```
+backend/
+├── app/
+│   ├── core/           # Core functionality (config, security, database)
+│   ├── models/         # Pydantic models and database schemas
+│   ├── routers/        # FastAPI route definitions
+│   ├── services/       # Business logic and data operations
+│   ├── main.py         # Application entry point
+│   └── dependencies.py # Dependency injection definitions
+├── requirements.txt    # Python dependencies
+├── server.py          # Server startup script
+└── test_*.py          # Integration tests
+```
+
+## Coding Standards
+- **Type hints**: Use full type annotations for all functions and methods
+- **Async/await**: Use async functions for all I/O operations
+- **Descriptive names**: Use clear, descriptive variable and function names
+- **Docstrings**: Document all public functions and classes
+- **Imports**: Organize imports (stdlib, third-party, local)
+- **Constants**: Use uppercase for constants, avoid magic numbers
+
+## Dependency Injection
+```python
+# Core dependencies
+async def get_database() -> AsyncIOMotorDatabase:
+    return await get_database_connection()
+
+async def get_cache_service() -> CacheService:
+    redis_client = await get_redis_client()
+    return CacheService(redis_client)
+
+# Service dependencies
+async def get_membership_service(
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+) -> MembershipService:
+    return MembershipService(db, cache_service)
+```
+
+## Configuration Management
+```python
+class Settings(BaseSettings):
+    # Database
+    mongodb_url: str = Field(..., env="MONGODB_URL")
+    database_name: str = "tiny_crm"
+
+    # Redis
+    redis_url: str = Field(..., env="REDIS_URL")
+
+    # JWT
+    jwt_secret_key: str = Field(..., env="JWT_SECRET_KEY")
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_days: int = 30
+
+    # OAuth
+    google_client_id: Optional[str] = Field(None, env="GOOGLE_CLIENT_ID")
+    google_client_secret: Optional[str] = Field(None, env="GOOGLE_CLIENT_SECRET")
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
+```
+
+## Application Startup
+```python
+# main.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="Tiny CRM API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+from app.routers import auth, organizations, contacts
+app.include_router(auth.router)
+app.include_router(organizations.router)
+app.include_router(contacts.router)
+
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    # Initialize database connections
+    # Set up indexes
+    # Initialize cache
+    pass
+```
+
+## Middleware Usage
+```python
+from fastapi.middleware.base import BaseHTTPMiddleware
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(f"{request.method} {request.url} - {response.status_code} - {process_time:.2f}s")
+        return response
+
+app.add_middleware(LoggingMiddleware)
+```
+
+## Logging Configuration
+```python
+import logging
+from logging.config import dictConfig
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+        },
+    },
+    "root": {
+        "level": "INFO",
+        "handlers": ["console"],
+    },
+    "loggers": {
+        "app": {
+            "level": "DEBUG",
+            "handlers": ["console"],
+            "propagate": False,
+        },
+    },
+}
+
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger("app")
+```
+
+## Environment Management
+- **Development**: Use `.env` files with `python-dotenv`
+- **Production**: Use environment variables or secret management
+- **Testing**: Use test-specific configuration
+- **Secrets**: Never commit secrets to version control
+
+## Performance Considerations
+- **Async operations**: Use async/await for all I/O
+- **Connection pooling**: Reuse database and Redis connections
+- **Caching**: Implement strategic caching for performance
+- **Lazy loading**: Load data only when needed
+- **Pagination**: Implement pagination for large datasets
+
+## Security Best Practices
+- **Input validation**: Use Pydantic models for all inputs
+- **Authentication**: Implement proper JWT token management
+- **Authorization**: Validate permissions for all operations
+- **HTTPS**: Use HTTPS in production
+- **Rate limiting**: Implement rate limiting for API endpoints
+- **CORS**: Configure CORS properly for frontend integration
+
+## Monitoring and Observability
+- **Logging**: Log important events and errors
+- **Metrics**: Track API performance and usage
+- **Health checks**: Implement health check endpoints
+- **Error tracking**: Use error monitoring services
+- **Performance monitoring**: Monitor response times and throughput

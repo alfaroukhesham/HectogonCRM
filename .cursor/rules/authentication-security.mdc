@@ -1,0 +1,55 @@
+---
+globs: backend/app/routers/auth.py,backend/app/core/security.py,backend/app/core/oauth.py
+description: Authentication and security patterns for JWT, OAuth, and session management
+---
+
+# Authentication & Security Patterns
+
+## JWT Token Management
+- **Access tokens**: Short-lived (30 minutes) for API access
+- **Refresh tokens**: Long-lived (30 days) for token renewal
+- **Dual storage**: Redis for persistence + in-memory for compatibility
+- **JTI denylist**: Blacklist compromised tokens using JTI claims
+
+## Token Operations
+```python
+# Store refresh token in Redis
+await cache_service.store_refresh_token(user_id, refresh_token)
+
+# Validate and refresh tokens
+user_id = verify_refresh_token(token)
+new_token = create_refresh_token(user_id)
+
+# Revoke tokens on security events
+await cache_service.revoke_refresh_token(user_id)
+```
+
+## Security Best Practices
+- **Password hashing**: Use bcrypt/PBKDF2 via `get_password_hash()`
+- **Token blacklisting**: Use Redis denylist for compromised tokens
+- **OAuth state protection**: CSRF protection for OAuth flows
+- **Session fixation prevention**: Revoke all tokens on password changes
+
+## OAuth Implementation
+- **State parameter**: Use for CSRF protection in OAuth flows
+- **Provider validation**: Support multiple OAuth providers (Google, Facebook, Twitter)
+- **User merging**: Handle existing user accounts with OAuth logins
+- **Token storage**: Store OAuth tokens securely for API access
+
+## Multi-tenant Security
+- **Organization context**: Validate user belongs to organization
+- **Role-based access**: Check permissions using membership roles
+- **Resource isolation**: Ensure users can only access their organization's data
+- **Audit logging**: Track security-relevant operations
+
+## Password Security
+- **Reset tokens**: One-time use tokens with expiration
+- **Email verification**: Require verification for new accounts
+- **Credential updates**: Revoke all sessions on password changes
+- **Rate limiting**: Implement rate limiting for auth endpoints
+
+## Session Management
+- **Logout**: Properly invalidate both access and refresh tokens
+- **Logout all**: Revoke all user sessions across devices
+- **Token rotation**: Issue new refresh tokens on each use
+- **Expiration handling**: Graceful handling of expired tokens

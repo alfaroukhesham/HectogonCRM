@@ -1,0 +1,87 @@
+---
+globs: backend/app/services/*.py
+description: Service layer patterns for business logic and data operations
+---
+
+# Service Layer Patterns
+
+## Service Structure
+```python
+class ServiceName:
+    def __init__(self, db=None, cache_service=None):
+        self.collection = db.collection_name if db else None
+        self.cache_service = cache_service
+
+    async def business_method(self, param: Type) -> ReturnType:
+        # Business logic implementation
+        pass
+```
+
+## Dependency Injection
+- **Constructor injection**: Pass database and cache services to constructors
+- **Optional dependencies**: Make cache and other services optional for testing
+- **Service composition**: Services can depend on other services
+- **Configuration**: Pass settings through service constructors
+
+## Business Logic Patterns
+- **Separation of concerns**: Keep business logic separate from route handlers
+- **Validation**: Validate business rules in service layer
+- **Error handling**: Handle business logic errors appropriately
+- **Transaction management**: Use database transactions for multi-step operations
+
+## Caching Integration
+```python
+# Cache-first pattern
+if self.cache_service:
+    cached = await self.cache_service.get_cached_data(key)
+    if cached:
+        return cached
+
+# Database operation
+data = await self.collection.find_one(query)
+
+# Cache result
+if self.cache_service and data:
+    await self.cache_service.cache_data(key, data)
+
+return data
+```
+
+## Cache Invalidation
+- **Strategic invalidation**: Invalidate cache on data changes
+- **Pattern-based**: Use key patterns for bulk invalidation
+- **Organization scoping**: Scope invalidation to specific organizations
+- **Graceful degradation**: Continue operations if cache fails
+
+## Repository Pattern
+- **Data access abstraction**: Abstract database operations
+- **Consistent interface**: Standard CRUD operations across entities
+- **Query optimization**: Optimize queries in service layer
+- **Connection management**: Handle database connections properly
+
+## Error Handling
+- **Custom exceptions**: Define domain-specific exceptions
+- **Logging**: Log errors with appropriate context
+- **Recovery**: Implement retry logic for transient failures
+- **Fallbacks**: Provide fallback behavior when services are unavailable
+
+## Multi-tenant Operations
+- **Organization validation**: Verify user access to organization
+- **Data filtering**: Filter data by organization membership
+- **Permission checks**: Validate permissions in service layer
+- **Audit logging**: Track operations for compliance
+
+## Service Dependencies
+```python
+async def get_service(
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+) -> ServiceClass:
+    return ServiceClass(db, cache_service)
+```
+
+## Testing Considerations
+- **Mock dependencies**: Make services testable with mocked dependencies
+- **Async testing**: Use async test patterns for service methods
+- **Integration testing**: Test service interactions with real dependencies
+- **Fixture management**: Use fixtures for common test setup

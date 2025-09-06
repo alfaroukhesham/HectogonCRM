@@ -1,0 +1,100 @@
+---
+globs: backend/app/services/cache_service.py,backend/app/core/redis_client.py
+description: Redis caching patterns and strategies used in this codebase
+---
+
+# Caching Patterns
+
+## Redis Integration
+- **Async Redis**: Use `redis.asyncio.Redis` for async operations
+- **Connection pooling**: Use connection pools for performance
+- **Error handling**: Graceful fallback when Redis is unavailable
+- **Serialization**: JSON serialization for complex data structures
+
+## Cache Service Structure
+```python
+class CacheService:
+    async def _safe_redis_operation(self, operation_name: str, operation_func, fallback_value=None):
+        try:
+            return await operation_func()
+        except redis.exceptions.RedisError as e:
+            logger.error(f"Redis {operation_name} failed: {e}")
+            return fallback_value
+```
+
+## Key Naming Conventions
+```python
+# User-specific keys
+f"user_memberships:{organization_id}:{user_id}"
+
+# Organization-specific keys
+f"dashboard:stats:{organization_id}"
+
+# Token keys
+f"refresh_token:{user_id}"
+f"jti_denylist:{jti}"
+
+# OAuth keys
+f"oauth_state:{state}"
+```
+
+## Cache Strategies
+- **Cache-first**: Check cache before database queries
+- **Write-through**: Update cache when data changes
+- **TTL-based expiration**: Use Redis TTL for automatic cleanup
+- **Organization scoping**: Scope cache keys by organization to prevent cross-tenant access
+
+## Membership Caching
+```python
+# Cache user membership per organization
+await cache_service.cache_user_memberships(user_id, org_id, membership_data)
+
+# Retrieve cached membership
+cached = await cache_service.get_cached_user_membership(user_id, org_id)
+
+# Invalidate specific membership
+await cache_service.invalidate_user_membership(user_id, org_id)
+```
+
+## Organization-level Invalidation
+```python
+# Safe organization-scoped invalidation
+await cache_service.invalidate_organization_members_cache(organization_id)
+# Uses pattern: user_memberships:{organization_id}:*
+```
+
+## Token Caching
+- **Refresh tokens**: Store with user_id keys and long TTL
+- **OAuth states**: Short-lived (10 minutes) for security
+- **Password resets**: One-time use with GETDEL operations
+- **Email verification**: One-time use tokens
+
+## Cache Invalidation Patterns
+- **User operations**: Invalidate user's memberships when membership changes
+- **Organization operations**: Invalidate all organization memberships when org changes
+- **Security events**: Invalidate all user tokens on password changes
+- **Bulk operations**: Use pattern matching for efficient bulk invalidation
+
+## Atomic Operations
+```python
+# GETDEL for one-time use tokens
+state_data = await redis.execute_command("GETDEL", key)
+
+# Pipeline for bulk operations
+async with redis.pipeline() as pipe:
+    pipe.delete(key1)
+    pipe.delete(key2)
+    await pipe.execute()
+```
+
+## Error Recovery
+- **Graceful degradation**: Continue without cache if Redis fails
+- **Retry logic**: Implement retry for transient Redis failures
+- **Monitoring**: Log cache hit/miss rates and error conditions
+- **Fallback values**: Provide sensible defaults when cache is unavailable
+
+## Performance Optimization
+- **Connection pooling**: Reuse Redis connections
+- **Async operations**: Never block on Redis operations
+- **Key expiration**: Use TTL to prevent memory leaks
+- **Memory management**: Monitor Redis memory usage and key counts

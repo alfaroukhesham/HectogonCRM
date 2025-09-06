@@ -1,0 +1,70 @@
+---
+globs: backend/app/models/*.py,backend/app/core/database.py
+description: Database patterns and Pydantic model conventions
+---
+
+# Database & Models Patterns
+
+## MongoDB with Motor
+- **Async operations**: Use `await` for all database operations
+- **Connection management**: Use dependency injection for database connections
+- **Error handling**: Handle connection failures and timeouts gracefully
+- **Indexing**: Define indexes for frequently queried fields
+
+## Pydantic Models
+```python
+class BaseModel(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+```
+
+## Model Patterns
+- **Base classes**: Extend from common base models for consistency
+- **Field aliases**: Use `alias="_id"` for MongoDB ObjectId fields
+- **Validators**: Use Pydantic validators for data transformation
+- **Serialization**: Custom JSON encoders for MongoDB types
+- **Optional fields**: Use `Optional[T]` with `None` defaults
+
+## Database Operations
+```python
+# Query patterns
+user_doc = await db.users.find_one({"email": email})
+users = await db.users.find({"organization_id": org_id}).to_list(None)
+
+# Update patterns
+await db.users.update_one(
+    {"_id": ObjectId(user_id)},
+    {"$set": {"last_login": datetime.utcnow()}}
+)
+
+# Aggregation patterns
+pipeline = [
+    {"$match": match_query},
+    {"$lookup": {"from": "organizations", "localField": "organization_id", "foreignField": "_id", "as": "org"}},
+    {"$unwind": "$org"}
+]
+```
+
+## Multi-tenant Patterns
+- **Organization scoping**: Include `organization_id` in relevant queries
+- **Access control**: Validate organization membership before operations
+- **Data isolation**: Ensure queries are scoped to user's organizations
+- **Audit fields**: Track creation/update timestamps and user context
+
+## Relationship Patterns
+- **Embedded documents**: Use for 1-1 and 1-many relationships
+- **References**: Use ObjectId references for many-many relationships
+- **Lookup aggregations**: Join collections using `$lookup` for complex queries
+- **Population**: Use aggregations to populate referenced documents
+
+## Migration Patterns
+- **Backward compatibility**: Handle schema changes gracefully
+- **Data validation**: Validate data during migrations
+- **Rollback support**: Design migrations with rollback capabilities
+- **Version tracking**: Track schema versions for compatibility

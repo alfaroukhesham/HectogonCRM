@@ -1,0 +1,140 @@
+---
+globs: backend/app/**/*.py
+description: Error handling patterns and best practices
+---
+
+# Error Handling Patterns
+
+## Early Return Pattern
+```python
+async def process_request(request: RequestModel) -> ResponseModel:
+    # Handle errors first with early returns
+    if not request.valid:
+        raise HTTPException(status_code=400, detail="Invalid request")
+
+    if not await check_permissions(request.user_id):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # Happy path last
+    result = await process_business_logic(request)
+    return ResponseModel.from_result(result)
+```
+
+## HTTP Exceptions
+- **400 Bad Request**: Invalid input data or validation errors
+- **401 Unauthorized**: Missing or invalid authentication
+- **403 Forbidden**: Valid authentication but insufficient permissions
+- **404 Not Found**: Resource doesn't exist
+- **409 Conflict**: Resource conflict (duplicate, etc.)
+- **422 Unprocessable Entity**: Validation errors from Pydantic
+- **500 Internal Server Error**: Unexpected server errors
+
+## Database Error Handling
+```python
+try:
+    result = await db.collection.insert_one(document)
+except DuplicateKeyError:
+    raise HTTPException(status_code=409, detail="Resource already exists")
+except PyMongoError as e:
+    logger.error(f"Database error: {e}")
+    raise HTTPException(status_code=500, detail="Database operation failed")
+```
+
+## Cache Error Handling
+```python
+# Graceful degradation
+cached_data = await cache_service.get_data(key)
+if cached_data is None:
+    # Cache miss or error - continue with database query
+    data = await db.collection.find_one(query)
+    # Optionally try to cache the result
+    if data and cache_service:
+        try:
+            await cache_service.set_data(key, data)
+        except Exception as cache_error:
+            logger.warning(f"Failed to cache data: {cache_error}")
+```
+
+## Validation Error Handling
+```python
+from pydantic import ValidationError
+
+try:
+    model = Model(**data)
+except ValidationError as e:
+    raise HTTPException(
+        status_code=422,
+        detail=f"Validation error: {e.errors()}"
+    )
+```
+
+## Logging Patterns
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+# Log errors with context
+logger.error(f"Failed to process {resource_type} {resource_id}: {str(e)}")
+
+# Log security events
+logger.warning(f"Unauthorized access attempt by user {user_id} to {resource}")
+
+# Log successful operations
+logger.info(f"Successfully created {resource_type} {resource_id}")
+```
+
+## Service Layer Errors
+```python
+class ServiceError(Exception):
+    """Base service exception"""
+    pass
+
+class ValidationError(ServiceError):
+    """Business logic validation error"""
+    pass
+
+class NotFoundError(ServiceError):
+    """Resource not found error"""
+    pass
+```
+
+## Async Error Handling
+```python
+async def async_operation():
+    try:
+        result = await external_api_call()
+        return result
+    except aiohttp.ClientError as e:
+        logger.error(f"External API call failed: {e}")
+        raise HTTPException(status_code=502, detail="External service unavailable")
+    except asyncio.TimeoutError:
+        logger.error("External API call timed out")
+        raise HTTPException(status_code=504, detail="Request timeout")
+```
+
+## Global Exception Handler
+```python
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "type": "validation_error"}
+    )
+```
+
+## Recovery Patterns
+- **Retry logic**: For transient failures (network, database timeouts)
+- **Circuit breaker**: For external service failures
+- **Fallback values**: Provide sensible defaults when operations fail
+- **Graceful degradation**: Continue with reduced functionality
+
+## Error Response Format
+```python
+{
+    "detail": "Human-readable error message",
+    "type": "error_type",  # Optional: for client-side handling
+    "code": "ERROR_CODE"   # Optional: for specific error identification
+}
+```
