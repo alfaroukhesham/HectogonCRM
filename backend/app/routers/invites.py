@@ -251,10 +251,10 @@ async def accept_invite(
         
         # Best-effort cache invalidation; don't block acceptance on cache errors
         try:
-            await cache_service.invalidate_user_memberships(current_user.id)
-            logger.info(f"Successfully invalidated membership cache for user {current_user.id} after invite acceptance")
+            await cache_service.invalidate_user_membership(current_user.id, invite.organization_id)
+            logger.info(f"Successfully invalidated membership cache for user {current_user.id} in org {invite.organization_id} after invite acceptance")
         except Exception as cache_error:
-            logger.warning(f"Failed to invalidate membership cache for user {current_user.id}: {cache_error}. Invite acceptance succeeded anyway.")
+            logger.warning(f"Failed to invalidate membership cache for user {current_user.id} in org {invite.organization_id}: {cache_error}. Invite acceptance succeeded anyway.")
         
         return {
             "message": "Invite accepted successfully",

@@ -12,24 +12,35 @@ from ..core.database import get_database
 from ..core.config import settings
 from ..core.security import (
     create_access_token, 
-    create_refresh_token, 
+    create_refresh_token,
+    create_refresh_token_redis,
     verify_password, 
     get_password_hash, 
     verify_refresh_token,
+    verify_refresh_token_redis,
     revoke_refresh_token,
     revoke_all_user_refresh_tokens,
     generate_oauth_state,
     store_oauth_state,
+    store_oauth_state_redis,
     verify_oauth_state,
+    verify_oauth_state_redis,
     generate_password_reset_token,
     store_password_reset_token,
+    store_password_reset_token_redis,
     verify_password_reset_token,
+    verify_password_reset_token_redis,
     revoke_password_reset_token,
+    revoke_password_reset_token_redis,
     generate_email_verification_token,
     store_email_verification_token,
+    store_email_verification_token_redis,
     verify_email_verification_token,
+    verify_email_verification_token_redis,
     revoke_email_verification_token,
-    cleanup_expired_tokens
+    revoke_email_verification_token_redis,
+    cleanup_expired_tokens,
+    cleanup_expired_tokens_redis
 )
 from ..core.oauth import get_oauth_provider, get_authorization_url, exchange_code_for_token, get_user_info
 from ..core.email import email_service
@@ -93,7 +104,11 @@ async def get_oauth_providers():
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate, db=Depends(get_database)):
+async def register(
+    user_data: UserCreate, 
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Register a new user with email and password."""
     try:
         # Check if user already exists
@@ -158,7 +173,7 @@ async def register(user_data: UserCreate, db=Depends(get_database)):
         
         # Generate and send email verification token
         verification_token = generate_email_verification_token()
-        store_email_verification_token(verification_token, user_id)
+        await store_email_verification_token_redis(verification_token, user_id, cache_service)
         
         # Send verification email
         email_sent = email_service.send_email_verification_email(
@@ -281,7 +296,11 @@ async def login(
 
 
 @router.post("/forgot-password")
-async def forgot_password(request: PasswordResetRequest, db=Depends(get_database)):
+async def forgot_password(
+    request: PasswordResetRequest, 
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Request password reset."""
     try:
         # Find user by email
@@ -300,7 +319,7 @@ async def forgot_password(request: PasswordResetRequest, db=Depends(get_database
         
         # Generate reset token
         reset_token = generate_password_reset_token()
-        store_password_reset_token(reset_token, str(user_doc["_id"]))
+        await store_password_reset_token_redis(reset_token, str(user_doc["_id"]), cache_service)
         
         # Send reset email
         email_sent = email_service.send_password_reset_email(
@@ -320,11 +339,15 @@ async def forgot_password(request: PasswordResetRequest, db=Depends(get_database
 
 
 @router.post("/reset-password")
-async def reset_password(request: PasswordResetConfirm, db=Depends(get_database)):
+async def reset_password(
+    request: PasswordResetConfirm, 
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Reset password with token."""
     try:
         # Verify reset token
-        user_id = verify_password_reset_token(request.token)
+        user_id = await verify_password_reset_token_redis(request.token, cache_service)
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -354,9 +377,10 @@ async def reset_password(request: PasswordResetConfirm, db=Depends(get_database)
         )
         
         # Revoke the reset token
-        revoke_password_reset_token(request.token)
+        await revoke_password_reset_token_redis(request.token, cache_service)
         
-        # Revoke all refresh tokens for security
+        # Revoke all refresh tokens for security (Redis and legacy store)
+        await cache_service.revoke_refresh_token(user_id)
         revoke_all_user_refresh_tokens(user_id)
         
         # Send confirmation email
@@ -382,9 +406,10 @@ async def reset_password(request: PasswordResetConfirm, db=Depends(get_database)
 
 @router.post("/change-password")
 async def change_password(
-    request: PasswordChange, 
+    request: PasswordChange,
     current_user: User = Depends(get_current_user),
-    db=Depends(get_database)
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Change password for authenticated user."""
     try:
@@ -416,7 +441,8 @@ async def change_password(
             }
         )
         
-        # Revoke all refresh tokens for security
+        # Revoke all refresh tokens for security (Redis and legacy store)
+        await cache_service.revoke_refresh_token(current_user.id)
         revoke_all_user_refresh_tokens(current_user.id)
         
         # Send confirmation email
@@ -438,11 +464,15 @@ async def change_password(
 
 
 @router.post("/verify-email")
-async def verify_email(request: EmailVerificationConfirm, db=Depends(get_database)):
+async def verify_email(
+    request: EmailVerificationConfirm, 
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Verify email address with token."""
     try:
         # Verify email token
-        user_id = verify_email_verification_token(request.token)
+        user_id = await verify_email_verification_token_redis(request.token, cache_service)
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -467,7 +497,7 @@ async def verify_email(request: EmailVerificationConfirm, db=Depends(get_databas
             )
         
         # Revoke the verification token
-        revoke_email_verification_token(request.token)
+        await revoke_email_verification_token_redis(request.token, cache_service)
         
         return {"message": "Email verified successfully"}
         
@@ -482,7 +512,11 @@ async def verify_email(request: EmailVerificationConfirm, db=Depends(get_databas
 
 
 @router.post("/resend-verification")
-async def resend_verification(request: EmailVerificationRequest, db=Depends(get_database)):
+async def resend_verification(
+    request: EmailVerificationRequest, 
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Resend email verification."""
     try:
         # Find user by email
@@ -501,7 +535,7 @@ async def resend_verification(request: EmailVerificationRequest, db=Depends(get_
         
         # Generate verification token
         verification_token = generate_email_verification_token()
-        store_email_verification_token(verification_token, str(user_doc["_id"]))
+        await store_email_verification_token_redis(verification_token, str(user_doc["_id"]), cache_service)
         
         # Send verification email
         email_sent = email_service.send_email_verification_email(
@@ -522,7 +556,11 @@ async def resend_verification(request: EmailVerificationRequest, db=Depends(get_
 
 # OAuth endpoints
 @router.get("/oauth/{provider}")
-async def oauth_login(provider: str, redirect_uri: str = None):
+async def oauth_login(
+    provider: str, 
+    redirect_uri: str = None,
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Initiate OAuth login."""
     try:
         # Validate provider
@@ -541,7 +579,7 @@ async def oauth_login(provider: str, redirect_uri: str = None):
         
         # Generate state for CSRF protection
         state = generate_oauth_state()
-        store_oauth_state(state, provider, redirect_uri or settings.FRONTEND_URL)
+        await store_oauth_state_redis(state, provider, redirect_uri or settings.FRONTEND_URL, cache_service)
         
         # Get authorization URL
         auth_url = get_authorization_url(oauth_provider, state, redirect_uri)
@@ -578,7 +616,7 @@ async def oauth_callback(
             )
         
         # Verify state
-        state_data = verify_oauth_state(state)
+        state_data = await verify_oauth_state_redis(state, cache_service)
         if not state_data or state_data["provider"] != provider:
             logger.error(f"Invalid OAuth state for {provider}")
             return RedirectResponse(
@@ -866,14 +904,17 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/cleanup-tokens")
-async def cleanup_tokens(current_user: User = Depends(get_current_user)):
+async def cleanup_tokens(
+    current_user: User = Depends(get_current_user),
+    cache_service: CacheService = Depends(get_cache_service)
+):
     """Cleanup expired tokens (admin endpoint)."""
     try:
         # Note: Admin check removed as role system has been simplified
         # All authenticated users can cleanup tokens for now
         
-        cleanup_expired_tokens()
-        return {"message": "Token cleanup completed"}
+        cleanup_stats = await cleanup_expired_tokens_redis(cache_service)
+        return {"message": "Token cleanup completed", "stats": cleanup_stats}
     except Exception as e:
         logger.error(f"Token cleanup error: {str(e)}")
         raise HTTPException(

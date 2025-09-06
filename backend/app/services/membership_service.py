@@ -66,6 +66,10 @@ class MembershipService:
         result = await self.collection.insert_one(membership_dict, session=session)
         membership_dict["_id"] = str(result.inserted_id)
         
+        # Invalidate user membership cache after creating a new membership
+        if self.cache_service:
+            await self.cache_service.invalidate_user_membership(membership_data.user_id, membership_data.organization_id)
+        
         return Membership(**membership_dict)
     
     async def get_membership(
@@ -74,6 +78,20 @@ class MembershipService:
         organization_id: str
     ) -> Optional[Membership]:
         """Get membership by user and organization."""
+        # Check cache first if cache service is available
+        if self.cache_service:
+            try:
+                cached_membership = await self.cache_service.get_cached_user_membership(user_id, organization_id)
+                if cached_membership is not None:
+                    logger.info(f"Found cached membership for user {user_id} in org {organization_id}")
+                    # Convert cached data back to Membership object
+                    cached_membership["_id"] = cached_membership.get("id")
+                    return Membership(**cached_membership)
+            except Exception as cache_error:
+                logger.warning(f"Cache error when getting membership for user {user_id} in org {organization_id}: {cache_error}")
+                # Continue to database query if cache fails
+        
+        # Query database
         membership_data = await self.collection.find_one({
             "user_id": user_id,
             "organization_id": organization_id
@@ -81,7 +99,18 @@ class MembershipService:
         
         if membership_data:
             membership_data["_id"] = str(membership_data["_id"])
-            return Membership(**membership_data)
+            membership = Membership(**membership_data)
+            
+            # Cache the result for future use
+            if self.cache_service:
+                try:
+                    membership_dict = membership.model_dump()
+                    membership_dict["id"] = membership_dict.get("_id")  # Ensure id field is set for cache
+                    await self.cache_service.cache_user_memberships(user_id, organization_id, membership_dict)
+                except Exception as cache_error:
+                    logger.warning(f"Failed to cache membership for user {user_id} in org {organization_id}: {cache_error}")
+            
+            return membership
         return None
     
     async def get_membership_by_id(self, membership_id: str) -> Optional[Membership]:
@@ -114,7 +143,11 @@ class MembershipService:
             )
             
             if result.modified_count:
-                return await self.get_membership_by_id(membership_id)
+                # Get the updated membership to invalidate the correct user's cache
+                updated_membership = await self.get_membership_by_id(membership_id)
+                if updated_membership and self.cache_service:
+                    await self.cache_service.invalidate_user_membership(updated_membership.user_id, updated_membership.organization_id)
+                return updated_membership
             return None
         except InvalidId:
             return None
@@ -122,7 +155,15 @@ class MembershipService:
     async def delete_membership(self, membership_id: str) -> bool:
         """Delete membership."""
         try:
+            # Get the membership before deletion to know which user's cache to invalidate
+            membership_to_delete = await self.get_membership_by_id(membership_id)
+            
             result = await self.collection.delete_one({"_id": ObjectId(membership_id)})
+            
+            # Invalidate user membership cache if deletion was successful
+            if result.deleted_count > 0 and membership_to_delete and self.cache_service:
+                await self.cache_service.invalidate_user_memberships(membership_to_delete.user_id)
+                
             return result.deleted_count > 0
         except InvalidId:
             return False
@@ -136,16 +177,10 @@ class MembershipService:
         try:
             logger.info(f"Getting memberships for user: {user_id}, status: {status}")
             
-            # 1. Check cache first if cache service is available and no status filter
-            if self.cache_service and not status:
-                cached_memberships = await self.cache_service.get_cached_user_memberships(user_id)
-                if cached_memberships is not None:
-                    logger.info(f"Found {len(cached_memberships)} cached memberships for user {user_id}")
-                    # Convert cached data back to OrganizationMembershipResponse objects
-                    return [
-                        OrganizationMembershipResponse(**membership) 
-                        for membership in cached_memberships
-                    ]
+            # 1. Skip cache for now since we don't know which organizations the user belongs to
+            # With the new org-scoped cache schema, we can't efficiently retrieve all memberships
+            # from cache without knowing the organization IDs. For individual org membership checks,
+            # use get_user_role_in_organization which can use cache effectively.
             
             # 2. If cache miss or status filter, query the database
             # Build match query
@@ -214,11 +249,20 @@ class MembershipService:
                     logger.error(f"Error processing membership document: {doc}, error: {str(e)}")
                     continue
             
-            # 3. Cache the result before returning (only if no status filter and cache service available)
+            # 3. Cache each membership separately per organization (only if no status filter)
             if self.cache_service and not status and memberships:
-                # Convert to serializable format for caching
-                memberships_data = [membership.model_dump() for membership in memberships]
-                await self.cache_service.cache_user_memberships(user_id, memberships_data)
+                for membership in memberships:
+                    try:
+                        membership_data = membership.model_dump()
+                        await self.cache_service.cache_user_memberships(
+                            user_id, 
+                            membership.organization_id, 
+                            membership_data
+                        )
+                    except Exception as cache_error:
+                        logger.warning(f"Failed to cache membership for user {user_id} in org {membership.organization_id}: {cache_error}")
+                        # Don't fail the main request for cache errors
+                        continue
             
             logger.info(f"Returning {len(memberships)} memberships for user {user_id}")
             return memberships
@@ -303,7 +347,7 @@ class MembershipService:
     
     async def update_last_accessed(self, user_id: str, organization_id: str):
         """Update the last accessed timestamp for a membership."""
-        await self.collection.update_one(
+        result = await self.collection.update_one(
             {
                 "user_id": user_id,
                 "organization_id": organization_id
@@ -315,6 +359,10 @@ class MembershipService:
                 }
             }
         )
+        
+        # Invalidate user membership cache if the update was successful
+        if result.modified_count > 0 and self.cache_service:
+            await self.cache_service.invalidate_user_membership(user_id, organization_id)
     
     async def check_user_role(
         self, 

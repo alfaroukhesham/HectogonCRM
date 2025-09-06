@@ -114,10 +114,10 @@ async def update_membership(
     
     # Best-effort cache invalidation; don't block membership update on cache errors
     try:
-        await cache_service.invalidate_user_memberships(existing_membership.user_id)
-        logger.info(f"Successfully invalidated membership cache for user {existing_membership.user_id} after role update")
+        await cache_service.invalidate_user_membership(existing_membership.user_id, existing_membership.organization_id)
+        logger.info(f"Successfully invalidated membership cache for user {existing_membership.user_id} in org {existing_membership.organization_id} after role update")
     except Exception as cache_error:
-        logger.warning(f"Failed to invalidate membership cache for user {existing_membership.user_id}: {cache_error}. Membership update succeeded anyway.")
+        logger.warning(f"Failed to invalidate membership cache for user {existing_membership.user_id} in org {existing_membership.organization_id}: {cache_error}. Membership update succeeded anyway.")
     
     return MembershipResponse(**membership.dict())
 
@@ -220,9 +220,9 @@ async def leave_organization(
     
     # Best-effort cache invalidation; don't block leaving organization on cache errors
     try:
-        await cache_service.invalidate_user_memberships(current_user.id)
-        logger.info(f"Successfully invalidated membership cache for user {current_user.id} after leaving organization")
+        await cache_service.invalidate_user_membership(current_user.id, organization_id)
+        logger.info(f"Successfully invalidated membership cache for user {current_user.id} in org {organization_id} after leaving organization")
     except Exception as cache_error:
-        logger.warning(f"Failed to invalidate membership cache for user {current_user.id}: {cache_error}. Leaving organization succeeded anyway.")
+        logger.warning(f"Failed to invalidate membership cache for user {current_user.id} in org {organization_id}: {cache_error}. Leaving organization succeeded anyway.")
     
     return {"message": "Successfully left the organization"} 

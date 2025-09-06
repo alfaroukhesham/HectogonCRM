@@ -34,6 +34,10 @@ class Settings:
     REDIS_SOCKET_CONNECT_TIMEOUT: int = int(os.environ.get('REDIS_SOCKET_CONNECT_TIMEOUT', '5'))
     REDIS_SOCKET_KEEPALIVE: bool = os.environ.get('REDIS_SOCKET_KEEPALIVE', 'true').lower() == 'true'
     
+    # Cache TTL settings (in seconds)
+    USER_MEMBERSHIP_CACHE_TTL: int = int(os.environ.get('USER_MEMBERSHIP_CACHE_TTL', '3600'))  # 1 hour
+    DASHBOARD_CACHE_TTL: int = int(os.environ.get('DASHBOARD_CACHE_TTL', '1800'))  # 30 minutes
+    
     # API settings
     API_PREFIX: str = "/api"
     

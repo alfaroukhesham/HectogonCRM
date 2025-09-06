@@ -50,29 +50,27 @@ async def test_redis_integration():
         
         # Test 2: Membership Caching
         logger.info("🔧 Testing membership caching...")
-        test_memberships = [
-            {
-                "id": "membership_1",
-                "user_id": test_user_id,
-                "organization_id": "org_123",
-                "organization_name": "Test Org",
-                "organization_slug": "test-org",
-                "role": "admin",
-                "status": "active",
-                "joined_at": datetime.now(timezone.utc).isoformat()
-            }
-        ]
+        test_membership = {
+            "id": "membership_1",
+            "user_id": test_user_id,
+            "organization_id": "org_123",
+            "organization_name": "Test Org",
+            "organization_slug": "test-org",
+            "role": "admin",
+            "status": "active",
+            "joined_at": datetime.now(timezone.utc).isoformat()
+        }
+        test_org_id = "org_123"
         
-        # Cache memberships
-        await cache_service.cache_user_memberships(test_user_id, test_memberships)
-        logger.info("✅ Memberships cached successfully")
+        # Cache membership for specific organization
+        await cache_service.cache_user_memberships(test_user_id, test_org_id, test_membership)
+        logger.info("✅ Membership cached successfully")
         
-        # Retrieve cached memberships
-        cached_memberships = await cache_service.get_cached_user_memberships(test_user_id)
-        assert cached_memberships is not None, "Failed to retrieve cached memberships"
-        assert len(cached_memberships) == 1, "Cached memberships count mismatch"
-        assert cached_memberships[0]["organization_name"] == "Test Org", "Cached data mismatch"
-        logger.info("✅ Memberships retrieved from cache successfully")
+        # Retrieve cached membership
+        cached_membership = await cache_service.get_cached_user_membership(test_user_id, test_org_id)
+        assert cached_membership is not None, "Failed to retrieve cached membership"
+        assert cached_membership["organization_name"] == "Test Org", "Cached data mismatch"
+        logger.info("✅ Membership retrieved from cache successfully")
         
         # Test 3: Cache Invalidation
         logger.info("🔧 Testing cache invalidation...")
@@ -86,13 +84,13 @@ async def test_redis_integration():
         assert retrieved_token is None, "Token should be None after revocation"
         logger.info("✅ Refresh token revocation successful")
         
-        # Invalidate memberships
-        result = await cache_service.invalidate_user_memberships(test_user_id)
-        assert result == True, "Failed to invalidate memberships"
+        # Invalidate membership for specific organization
+        result = await cache_service.invalidate_user_membership(test_user_id, test_org_id)
+        assert result == True, "Failed to invalidate membership"
         
-        # Verify memberships are gone
-        cached_memberships = await cache_service.get_cached_user_memberships(test_user_id)
-        assert cached_memberships is None, "Memberships should be None after invalidation"
+        # Verify membership is gone
+        cached_membership = await cache_service.get_cached_user_membership(test_user_id, test_org_id)
+        assert cached_membership is None, "Membership should be None after invalidation"
         logger.info("✅ Membership cache invalidation successful")
         
         logger.info("🎉 All Redis integration tests passed!")

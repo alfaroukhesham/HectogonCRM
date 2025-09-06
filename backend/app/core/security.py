@@ -13,7 +13,9 @@ import uuid
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Store for refresh tokens (in production, use Redis or database)
+# Redis-based token storage through CacheService
+# Note: The in-memory stores are kept as fallback for backward compatibility
+# but are no longer the primary storage mechanism
 refresh_token_store: Dict[str, Dict[str, Any]] = {}
 
 
@@ -35,11 +37,44 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def create_refresh_token(user_id: str) -> str:
-    """Create refresh token and store it."""
+    """Create refresh token and store it (in-memory fallback version)."""
     # Generate a secure random token
     token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64))
     
     # Store token with expiration
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
+    refresh_token_store[token] = {
+        "user_id": user_id,
+        "expires_at": expire,
+        "created_at": datetime.now(timezone.utc)
+    }
+    
+    return token
+
+
+async def create_refresh_token_redis(user_id: str, cache_service=None) -> str:
+    """
+    Create refresh token and store it in Redis.
+    This is the preferred version that uses Redis for storage.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        user_id: User ID to create token for
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        str: Generated refresh token
+    """
+    # Generate a secure random token
+    token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64))
+    
+    # Try Redis storage first
+    if cache_service:
+        redis_stored = await cache_service.store_refresh_token(user_id, token)
+        if redis_stored:
+            return token
+    
+    # Fallback to in-memory storage
     expire = datetime.now(timezone.utc) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     refresh_token_store[token] = {
         "user_id": user_id,
@@ -74,7 +109,7 @@ def verify_token(token: str) -> Optional[TokenData]:
 
 
 def verify_refresh_token(token: str) -> Optional[str]:
-    """Verify refresh token and return user_id."""
+    """Verify refresh token and return user_id (in-memory fallback version)."""
     # Validate token format first
     if not token or len(token) != 64 or not all(c in string.ascii_letters + string.digits for c in token):
         return None
@@ -92,6 +127,33 @@ def verify_refresh_token(token: str) -> Optional[str]:
         
     return token_data["user_id"]
 
+
+async def verify_refresh_token_redis(token: str, cache_service=None) -> Optional[str]:
+    """
+    Verify refresh token using Redis storage.
+    This is the preferred version that checks Redis first.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        token: Refresh token to verify
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        str: User ID if token is valid, None otherwise
+    """
+    # Validate token format first
+    if not token or len(token) != 64 or not all(c in string.ascii_letters + string.digits for c in token):
+        return None
+
+    # Try Redis first (token -> user_id mapping)
+    if cache_service:
+        # Assumes CacheService exposes a lookup by token.
+        user_id = await cache_service.get_user_id_by_refresh_token(token)
+        if user_id:
+            return user_id
+
+    # Fallback to in-memory storage
+    return verify_refresh_token(token)
 
 def revoke_refresh_token(token: str) -> bool:
     """Revoke refresh token."""
@@ -178,7 +240,7 @@ email_verification_store: Dict[str, Dict[str, Any]] = {}
 
 
 def store_oauth_state(state: str, provider: str, redirect_uri: str) -> None:
-    """Store OAuth state token."""
+    """Store OAuth state token (in-memory fallback version)."""
     oauth_state_store[state] = {
         "provider": provider,
         "redirect_uri": redirect_uri,
@@ -187,8 +249,34 @@ def store_oauth_state(state: str, provider: str, redirect_uri: str) -> None:
     }
 
 
+async def store_oauth_state_redis(state: str, provider: str, redirect_uri: str, cache_service=None) -> bool:
+    """
+    Store OAuth state token in Redis.
+    This is the preferred version that uses Redis for storage.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        state: OAuth state token
+        provider: OAuth provider name
+        redirect_uri: Redirect URI for OAuth flow
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        bool: True if stored successfully, False otherwise
+    """
+    # Try Redis storage first
+    if cache_service:
+        redis_stored = await cache_service.store_oauth_state(state, provider, redirect_uri)
+        if redis_stored:
+            return True
+    
+    # Fallback to in-memory storage
+    store_oauth_state(state, provider, redirect_uri)
+    return True
+
+
 def verify_oauth_state(state: str) -> Optional[Dict[str, Any]]:
-    """Verify OAuth state token."""
+    """Verify OAuth state token (in-memory fallback version)."""
     # Validate state format first
     if not state or len(state) != 32 or not all(c in string.ascii_letters + string.digits for c in state):
         return None
@@ -208,13 +296,46 @@ def verify_oauth_state(state: str) -> Optional[Dict[str, Any]]:
     return state_data
 
 
+async def verify_oauth_state_redis(state: str, cache_service=None) -> Optional[Dict[str, Any]]:
+    """
+    Verify OAuth state token using Redis storage.
+    This is the preferred version that checks Redis first.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        state: OAuth state token to verify
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        dict: State data if token is valid, None otherwise
+    """
+    # Validate state format first
+    if not state or len(state) != 32 or not all(c in string.ascii_letters + string.digits for c in state):
+        return None
+    
+    # Try Redis storage first (one-time use)
+    if cache_service:
+        if hasattr(cache_service, "pop_oauth_state"):
+            state_data = await cache_service.pop_oauth_state(state)  # atomic GETDEL if available
+            if state_data:
+                return state_data
+        else:
+            state_data = await cache_service.get_oauth_state(state)
+            if state_data:
+                # Best-effort one-time semantics
+                await cache_service.delete_oauth_state(state)
+                return state_data
+
+    # Fallback to in-memory storage
+    return verify_oauth_state(state)
+
 def generate_password_reset_token() -> str:
     """Generate a secure password reset token."""
     return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64))
 
 
 def store_password_reset_token(token: str, user_id: str) -> None:
-    """Store password reset token."""
+    """Store password reset token (in-memory fallback version)."""
     password_reset_store[token] = {
         "user_id": user_id,
         "created_at": datetime.now(timezone.utc),
@@ -222,8 +343,33 @@ def store_password_reset_token(token: str, user_id: str) -> None:
     }
 
 
+async def store_password_reset_token_redis(token: str, user_id: str, cache_service=None) -> bool:
+    """
+    Store password reset token in Redis.
+    This is the preferred version that uses Redis for storage.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        token: Password reset token
+        user_id: User ID for the reset request
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        bool: True if stored successfully, False otherwise
+    """
+    # Try Redis storage first
+    if cache_service:
+        redis_stored = await cache_service.store_password_reset_token(token, user_id)
+        if redis_stored:
+            return True
+    
+    # Fallback to in-memory storage
+    store_password_reset_token(token, user_id)
+    return True
+
+
 def verify_password_reset_token(token: str) -> Optional[str]:
-    """Verify password reset token and return user_id."""
+    """Verify password reset token and return user_id (in-memory fallback version)."""
     # Validate token format first
     if not token or len(token) != 64 or not all(c in string.ascii_letters + string.digits for c in token):
         return None
@@ -241,12 +387,62 @@ def verify_password_reset_token(token: str) -> Optional[str]:
     return token_data["user_id"]
 
 
+async def verify_password_reset_token_redis(token: str, cache_service=None) -> Optional[str]:
+    """
+    Verify password reset token using Redis storage.
+    This is the preferred version that checks Redis first.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        token: Password reset token to verify
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        str: User ID if token is valid, None otherwise
+    """
+    # Validate token format first
+    if not token or len(token) != 64 or not all(c in string.ascii_letters + string.digits for c in token):
+        return None
+    
+    # Try Redis storage first
+    if cache_service:
+        user_id = await cache_service.get_password_reset_token(token)
+        if user_id:
+            return user_id
+    
+    # Fallback to in-memory storage
+    return verify_password_reset_token(token)
+
+
 def revoke_password_reset_token(token: str) -> bool:
-    """Revoke password reset token."""
+    """Revoke password reset token (in-memory fallback version)."""
     if token in password_reset_store:
         del password_reset_store[token]
         return True
     return False
+
+
+async def revoke_password_reset_token_redis(token: str, cache_service=None) -> bool:
+    """
+    Revoke password reset token using Redis storage.
+    This is the preferred version that uses Redis first.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        token: Password reset token to revoke
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        bool: True if revoked successfully, False otherwise
+    """
+    # Try Redis storage first
+    if cache_service:
+        redis_revoked = await cache_service.revoke_password_reset_token(token)
+        if redis_revoked:
+            return True
+    
+    # Fallback to in-memory storage
+    return revoke_password_reset_token(token)
 
 
 def generate_email_verification_token() -> str:
@@ -255,7 +451,7 @@ def generate_email_verification_token() -> str:
 
 
 def store_email_verification_token(token: str, user_id: str) -> None:
-    """Store email verification token."""
+    """Store email verification token (in-memory fallback version)."""
     email_verification_store[token] = {
         "user_id": user_id,
         "created_at": datetime.now(timezone.utc),
@@ -263,8 +459,33 @@ def store_email_verification_token(token: str, user_id: str) -> None:
     }
 
 
+async def store_email_verification_token_redis(token: str, user_id: str, cache_service=None) -> bool:
+    """
+    Store email verification token in Redis.
+    This is the preferred version that uses Redis for storage.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        token: Email verification token
+        user_id: User ID for the verification request
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        bool: True if stored successfully, False otherwise
+    """
+    # Try Redis storage first
+    if cache_service:
+        redis_stored = await cache_service.store_email_verification_token(token, user_id)
+        if redis_stored:
+            return True
+    
+    # Fallback to in-memory storage
+    store_email_verification_token(token, user_id)
+    return True
+
+
 def verify_email_verification_token(token: str) -> Optional[str]:
-    """Verify email verification token and return user_id."""
+    """Verify email verification token and return user_id (in-memory fallback version)."""
     # Validate token format first
     if not token or len(token) != 64 or not all(c in string.ascii_letters + string.digits for c in token):
         return None
@@ -282,16 +503,66 @@ def verify_email_verification_token(token: str) -> Optional[str]:
     return token_data["user_id"]
 
 
+async def verify_email_verification_token_redis(token: str, cache_service=None) -> Optional[str]:
+    """
+    Verify email verification token using Redis storage.
+    This is the preferred version that checks Redis first.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        token: Email verification token to verify
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        str: User ID if token is valid, None otherwise
+    """
+    # Validate token format first
+    if not token or len(token) != 64 or not all(c in string.ascii_letters + string.digits for c in token):
+        return None
+    
+    # Try Redis storage first
+    if cache_service:
+        user_id = await cache_service.get_email_verification_token(token)
+        if user_id:
+            return user_id
+    
+    # Fallback to in-memory storage
+    return verify_email_verification_token(token)
+
+
 def revoke_email_verification_token(token: str) -> bool:
-    """Revoke email verification token."""
+    """Revoke email verification token (in-memory fallback version)."""
     if token in email_verification_store:
         del email_verification_store[token]
         return True
     return False
 
 
+async def revoke_email_verification_token_redis(token: str, cache_service=None) -> bool:
+    """
+    Revoke email verification token using Redis storage.
+    This is the preferred version that uses Redis first.
+    Falls back to in-memory storage if Redis is unavailable.
+    
+    Args:
+        token: Email verification token to revoke
+        cache_service: CacheService instance for Redis operations
+    
+    Returns:
+        bool: True if revoked successfully, False otherwise
+    """
+    # Try Redis storage first
+    if cache_service:
+        redis_revoked = await cache_service.revoke_email_verification_token(token)
+        if redis_revoked:
+            return True
+    
+    # Fallback to in-memory storage
+    return revoke_email_verification_token(token)
+
+
 def cleanup_expired_tokens() -> None:
-    """Clean up expired tokens from all stores."""
+    """Clean up expired tokens from all in-memory stores (fallback version)."""
     current_time = datetime.now(timezone.utc)
     
     # Clean up refresh tokens
@@ -318,13 +589,36 @@ def cleanup_expired_tokens() -> None:
     for token in expired_reset_tokens:
         del password_reset_store[token]
     
-    # Clean up email verification tokens
+    # Clean up email verification tokens  
     expired_verification_tokens = [
         token for token, data in email_verification_store.items()
-        if current_time > data["expires_at"]
+        if (datetime.now(timezone.utc) - data["created_at"]).total_seconds() > settings.EMAIL_VERIFICATION_EXPIRE_HOURS * 3600
     ]
     for token in expired_verification_tokens:
-        del email_verification_store[token] 
- 
- 
+        del email_verification_store[token]
+
+async def cleanup_expired_tokens_redis(cache_service=None) -> Dict[str, Any]:
+    """
+    Clean up expired tokens from Redis storage.
+    This is the preferred version that uses Redis TTL for automatic cleanup.
+    Falls back to in-memory cleanup if Redis is unavailable.
+
+    Args:
+        cache_service: CacheService instance for Redis operations
+
+    Returns:
+        dict: Cleanup statistics for each token type
+    """
+    if cache_service:
+        return await cache_service.cleanup_expired_tokens()
+    else:
+        # Fallback to in-memory cleanup
+        cleanup_expired_tokens()
+        return {
+            "refresh": 0,
+            "oauth_state": 0,
+            "password_reset": 0,
+            "email_verification": 0,
+            "source": "in-memory",
+        }
  
