@@ -13,8 +13,7 @@ from bson.errors import InvalidId
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
-    from app.services.membership_service import MembershipService
-    from app.services.organization_service import OrganizationService
+    from app.services import MembershipService, OrganizationService
 
 
 # HTTP Bearer token scheme
@@ -145,7 +144,7 @@ async def get_organization_context(
             detail="Organization ID is required. Please provide X-Organization-ID header."
         )
     
-    from app.services.membership_service import MembershipService
+    from app.services import MembershipService
     membership_service = MembershipService(db)
     
     # Fetch the full membership document
@@ -236,7 +235,7 @@ async def get_optional_organization_context(
     if not organization_id or not current_user:
         return None
     
-    from app.services.membership_service import MembershipService
+    from app.services import MembershipService
     membership_service = MembershipService(db)
     membership = await membership_service.get_membership(current_user.id, organization_id)
     
@@ -254,7 +253,7 @@ async def get_organization_service(
     db: Any = Depends(get_database)
 ) -> Any:
     """Get organization service."""
-    from app.services.organization_service import OrganizationService
+    from app.services import OrganizationService
     return OrganizationService(db)
 
 
@@ -262,8 +261,8 @@ async def get_membership_service(
     db: Any = Depends(get_database)
 ) -> Any:
     """Get membership service with cache support."""
-    from app.services.membership_service import MembershipService
-    from app.services.cache_service import CacheService
+    from app.services import MembershipService
+    from app.services import CacheService
     cache_service = CacheService(get_redis_client())
     return MembershipService(db, cache_service)
 
@@ -285,7 +284,7 @@ async def get_cache_service(
     db: Any = Depends(get_database)
 ) -> Any:
     """Get cache service."""
-    from app.services.cache_service import CacheService
+    from app.services import CacheService
     return CacheService(get_redis_client())
 
 

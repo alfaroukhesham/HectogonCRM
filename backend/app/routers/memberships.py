@@ -11,8 +11,7 @@ from app.models.membership import (
     MembershipUpdate, MembershipResponse, UserMembershipResponse,
     MembershipRole, MembershipStatus
 )
-from app.services.membership_service import MembershipService
-from app.services.cache_service import CacheService
+from app.services import MembershipService, CacheService
 
 
 router = APIRouter(prefix="/memberships", tags=["memberships"])

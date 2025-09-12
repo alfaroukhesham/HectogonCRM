@@ -5,7 +5,7 @@
 - [X] Implement Redis caching for Dashboard Statistics & Analytics (`/dashboard/stats` endpoint).
   - Cache dashboard stats per organization (TTL: 5-15 minutes).
   - Invalidate cache on data changes (contacts, deals, activities).
-- [ ] Integrate Redis for User Authentication & Session Management.
+- [X] Integrate Redis for User Authentication & Session Management.
   - Store refresh tokens in Redis with TTL.
   - Cache user permissions and organization memberships.
   - Implement blacklisting for revoked tokens.

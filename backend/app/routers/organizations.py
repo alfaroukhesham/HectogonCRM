@@ -19,8 +19,7 @@ from app.models.membership import (
     MembershipRole, MembershipCreate, MembershipStatus,
     OrganizationMembershipResponse, OrganizationContext
 )
-from app.services.organization_service import OrganizationService
-from app.services.membership_service import MembershipService
+from app.services import OrganizationService, MembershipService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/organizations", tags=["organizations"])

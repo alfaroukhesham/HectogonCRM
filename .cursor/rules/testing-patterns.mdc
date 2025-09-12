@@ -7,9 +7,19 @@ description: Testing patterns and best practices for the backend
 
 ## Test File Organization
 - **Integration tests**: `test_redis_integration.py` for Redis operations
-- **Unit tests**: Test individual functions and services
+- **Unit tests**: Co-located with services in `service-name/test_service.py`
+- **Service tests**: Each service folder contains its own test files
 - **API tests**: Test FastAPI routes and endpoints
 - **Fixture management**: Use pytest fixtures for common setup
+
+## Service Folder Testing Structure
+```
+services/
+├── service-name/
+│   ├── test_service.py       # Unit tests for service methods
+│   ├── test_integration.py   # Integration tests with real dependencies
+│   └── test_models.py        # Tests for service-specific models
+```
 
 ## Redis Integration Testing
 ```python

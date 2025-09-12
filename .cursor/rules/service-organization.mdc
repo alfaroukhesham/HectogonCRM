@@ -1,0 +1,205 @@
+---
+globs: backend/app/services/**/*.py
+description: Service organization patterns for folder-based service architecture
+---
+
+# Service Organization Patterns
+
+## Migration from Flat to Folder Structure
+
+### Before (Flat Structure)
+```
+services/
+├── cache_service.py
+├── invite_service.py
+├── membership_service.py
+└── organization_service.py
+```
+
+### After (Folder Structure)
+```
+services/
+├── cache_service/
+│   ├── __init__.py
+│   ├── service.py
+│   ├── models.py
+│   ├── types.py
+│   ├── utils.py
+│   ├── constants.py
+│   ├── test_service.py
+│   └── test_integration.py
+├── invite_service/
+│   ├── __init__.py
+│   ├── service.py
+│   ├── models.py
+│   ├── types.py
+│   ├── utils.py
+│   ├── constants.py
+│   ├── test_service.py
+│   └── test_integration.py
+├── membership_service/
+│   ├── __init__.py
+│   ├── service.py
+│   ├── models.py
+│   ├── types.py
+│   ├── utils.py
+│   ├── constants.py
+│   ├── test_service.py
+│   └── test_integration.py
+└── organization_service/
+    ├── __init__.py
+    ├── service.py
+    ├── models.py
+    ├── types.py
+    ├── utils.py
+    ├── constants.py
+    ├── test_service.py
+    └── test_integration.py
+```
+
+## Migration Steps
+
+### 1. Create Service Folders
+```bash
+mkdir -p backend/app/services/cache_service
+mkdir -p backend/app/services/invite_service
+mkdir -p backend/app/services/membership_service
+mkdir -p backend/app/services/organization_service
+```
+
+### 2. Move and Split Files
+For each service, split the monolithic file into focused modules:
+
+**Original**: `cache_service.py` (406 lines)
+```
+cache_service/
+├── __init__.py           # Exports and dependencies
+├── service.py           # Core CacheService class (main logic)
+├── models.py            # Cache-related models/schemas
+├── types.py             # Cache-specific enums/types
+├── utils.py             # Cache utility functions
+├── constants.py         # Cache TTL values, patterns
+└── test_service.py      # Unit tests
+```
+
+### 3. Update Import Statements
+Update all imports throughout the codebase:
+
+```python
+from app.services.cache_service import CacheService
+```
+```
+
+### 4. Update Dependency Injection
+Update `dependencies.py` and service factory functions:
+
+```python
+# dependencies.py
+async def get_cache_service(
+    redis_client=Depends(get_redis_client)
+) -> CacheService:
+    from app.services.cache_service import CacheService
+    return CacheService(redis_client)
+```
+
+### 5. Update Router Imports
+Update router files to import from new locations:
+
+```python
+# routers/auth.py
+from app.dependencies import get_cache_service
+```
+
+## Service-Specific Organization
+
+### Cache Service
+**service.py**: `CacheService` class with all caching methods
+**models.py**: Cache-related request/response models
+**types.py**: Cache operation enums
+**utils.py**: Cache key generation, serialization helpers
+**constants.py**: TTL values, cache patterns
+
+### Invite Service
+**service.py**: `InviteService` class
+**models.py**: Invite creation/response models
+**types.py**: Invite status enums
+**utils.py**: Invite code generation, validation
+**constants.py**: Invite expiration times
+
+### Membership Service
+**service.py**: `MembershipService` class
+**models.py**: Membership-specific models
+**types.py**: Role and status enums
+**utils.py**: Permission checking helpers
+**constants.py**: Membership constraints
+
+### Organization Service
+**service.py**: `OrganizationService` class
+**models.py**: Organization models
+**types.py**: Organization types
+**utils.py**: Slug generation, validation
+**constants.py**: Organization limits
+
+## Benefits of Folder Structure
+
+### 1. Better Organization
+- Related code grouped together
+- Clear separation of concerns
+- Easier navigation and maintenance
+
+### 2. Improved Testability
+- Tests co-located with code
+- Service-specific test fixtures
+- Isolated testing per service
+
+### 3. Enhanced Modularity
+- Service-specific utilities
+- Dedicated model files
+- Type definitions per service
+
+### 4. Scalability
+- Easy to add new service features
+- Clear boundaries between services
+- Independent deployment potential
+
+## Naming Conventions
+### Folder Names
+- Use snake_case: `cache_service`, `invite_service`
+- Match service domain: `membership_service`, `organization_service`
+### File Names
+- `service.py`: Main service class
+- `models.py`: Pydantic models
+- `types.py`: Enums and type definitions
+- `utils.py`: Helper functions
+- `constants.py`: Service constants
+- `test_service.py`: Unit tests
+```python
+# Preferred: Import from service folder (requires __init__.py re-exports)
+from app.services.cache_service import CacheService
+# Provider import (if defined in dependencies.py)
+from app.dependencies import get_cache_service
+
+# Alternative: Direct import
+from app.services.cache_service.service import CacheService
+```
+
+## Code Splitting Guidelines
+
+### When to Split
+- **Large files**: >200 lines → split into logical modules
+- **Mixed concerns**: Separate business logic from utilities
+- **Reusable code**: Extract common patterns to utils
+- **Type definitions**: Move enums and types to dedicated file
+
+### What Goes Where
+- **service.py**: Core business logic, main class
+- **models.py**: Request/response models, validation schemas
+- **types.py**: Enums, status types, constants used in logic
+- **utils.py**: Pure functions, data transformations, helpers
+- **constants.py**: Magic numbers, configuration values
+
+### Dependency Management
+- Keep imports minimal within each module
+- Use relative imports within service folder
+- Export public API through `__init__.py`
+- Maintain clear dependency boundaries

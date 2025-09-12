@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
-from app.services.membership_service import MembershipService
+from app.services import MembershipService
 from app.models.membership import MembershipCreate, MembershipUpdate, MembershipRole, MembershipStatus
 
 

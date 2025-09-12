@@ -12,7 +12,11 @@ backend/
 │   ├── core/           # Core functionality (config, security, database)
 │   ├── models/         # Pydantic models and database schemas
 │   ├── routers/        # FastAPI route definitions
-│   ├── services/       # Business logic and data operations
+│   ├── services/       # Service folders (organized by domain)
+│   │   ├── cache_service/
+│   │   ├── invite_service/
+│   │   ├── membership_service/
+│   │   └── organization_service/
 │   ├── main.py         # Application entry point
 │   └── dependencies.py # Dependency injection definitions
 ├── requirements.txt    # Python dependencies

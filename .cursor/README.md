@@ -58,6 +58,17 @@ This directory contains Cursor Rules that capture the patterns, conventions, and
 - Configuration management
 - Performance and security best practices
 
+### 📁 [Service Organization](rules/service-organization.mdc)
+- Folder-based service architecture
+- Migration from flat to structured services
+- Service-specific file organization
+
+### 🔄 [Service Migration Example](rules/service-migration-example.mdc)
+- Practical cache service migration walkthrough
+- File splitting strategies
+- Import and dependency updates
+- Testing migration approach
+
 ## How to Use These Rules
 
 ### Automatic Application
@@ -115,6 +126,57 @@ Rules with `globs` patterns are automatically applied when working with files ma
 - **Pydantic v2**: Data validation and serialization
 - **JWT**: Authentication tokens
 - **OAuth**: Social login integration
+
+## Service Organization Migration
+
+### Current Structure → Target Structure
+
+**Before (Flat):**
+```
+services/
+├── cache_service.py
+├── invite_service.py
+├── membership_service.py
+└── organization_service.py
+```
+
+**After (Folder-based):**
+```
+services/
+├── cache_service/
+│   ├── __init__.py
+│   ├── service.py
+│   ├── models.py
+│   ├── types.py
+│   ├── utils.py
+│   ├── constants.py
+│   └── test_service.py
+├── invite_service/
+│   ├── __init__.py
+│   ├── service.py
+│   ├── models.py
+│   ├── types.py
+│   ├── utils.py
+│   └── test_service.py
+└── ...
+```
+
+### Migration Benefits
+- **Better maintainability**: Related code grouped together
+- **Improved debugging**: Clear separation of concerns
+- **Enhanced testability**: Tests co-located with code
+- **Scalability**: Easy to add features per service
+- **Team collaboration**: Reduced merge conflicts
+
+### Implementation Steps
+1. Create service folders with kebab-case naming
+2. Split monolithic service files into focused modules
+3. Move tests into respective service folders
+4. Update all import statements throughout codebase
+5. Update dependency injection functions
+6. Test thoroughly after migration
+
+See [Service Organization](rules/service-organization.mdc) for detailed migration guidance.
 
 ## Development Workflow
 

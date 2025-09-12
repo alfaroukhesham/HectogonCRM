@@ -1,0 +1,286 @@
+---
+description: Practical example of migrating cache_service.py to folder structure
+---
+
+# Service Migration Example: Cache Service
+
+## Original File Analysis
+**File**: `backend/app/services/cache_service.py` (406 lines)
+
+**Classes/Functions**:
+- `CacheService` class (main business logic)
+- Multiple caching methods (20+ methods)
+- Error handling patterns
+- Redis integration
+- Organization-scoped key patterns
+
+## Migration Plan
+
+### Step 1: Create Folder Structure
+```bash
+mkdir -p backend/app/services/cache_service
+cd backend/app/services/cache_service
+touch __init__.py service.py models.py types.py utils.py constants.py test_service.py
+
+### Step 2: Split Original File
+
+#### constants.py - Extract Constants
+```python
+# cache-service/constants.py
+# Cache TTL values
+USER_MEMBERSHIP_CACHE_TTL = 3600  # 1 hour
+DASHBOARD_CACHE_TTL = 300         # 5 minutes
+
+# Cache key patterns
+USER_MEMBERSHIPS_PATTERN = "user_memberships:{organization_id}:{user_id}"
+DASHBOARD_STATS_PATTERN = "dashboard:stats:{organization_id}"
+```
+
+#### types.py - Extract Enums/Types
+```python
+# cache-service/types.py
+from enum import Enum
+from typing import Dict, Any, Optional
+
+class CacheOperation(str, Enum):
+    GET = "get"
+    SET = "set"
+    DELETE = "delete"
+    INVALIDATE = "invalidate"
+
+class CacheResult:
+    def __init__(self, success: bool, data: Any = None, error: Optional[str] = None):
+        self.success = success
+        self.data = data
+        self.error = error
+```
+
+#### utils.py - Extract Helper Functions
+```python
+# cache-service/utils.py
+import json
+from typing import Any
+
+def serialize_data(data: Any) -> str:
+    """Serialize data for Redis storage"""
+    return json.dumps(data, default=str)
+
+def deserialize_data(data: str) -> Any:
+    """Deserialize data from Redis"""
+    return json.loads(data)
+
+def generate_cache_key(pattern: str, **kwargs) -> str:
+    """Generate cache key from pattern and parameters"""
+    return pattern.format(**kwargs)
+```
+
+#### models.py - Extract Models
+```python
+# cache-service/models.py
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+
+class CacheEntry(BaseModel):
+    key: str
+    value: Any
+    ttl: Optional[int] = None
+
+class CacheStats(BaseModel):
+    hits: int = 0
+    misses: int = 0
+    sets: int = 0
+    deletes: int = 0
+```
+
+#### service.py - Core Service Logic
+```python
+# cache-service/service.py
+import logging
+from typing import Optional, Dict, Any, List
+from fastapi import Depends
+from app.core.redis_client import get_redis_client
+from app.core.config import settings
+import redis.asyncio as redis
+
+from .types import CacheResult
+from .utils import serialize_data, deserialize_data, generate_cache_key
+from .constants import USER_MEMBERSHIPS_PATTERN, USER_MEMBERSHIP_CACHE_TTL
+
+logger = logging.getLogger(__name__)
+
+class CacheService:
+    """Comprehensive caching service for Redis-based token and data caching."""
+    def __init__(self, redis_client: redis.Redis):
+        self.redis = redis_client
+        """Safely execute Redis operations with error handling and fallback."""
+        try:
+            return await operation_func()
+        except redis.exceptions.RedisError as e:
+            logger.error(f"Redis {operation_name} failed: {e}")
+            return fallback_value
+        except Exception as e:
+            logger.error(f"Unexpected error during Redis {operation_name}: {e}")
+            return fallback_value
+
+    # ... existing cache methods moved here with imports updated ...
+
+    async def cache_user_memberships(self, user_id: str, organization_id: str, membership_data: dict):
+        """Caches a user's membership for a specific organization."""
+        async def _cache():
+            key = generate_cache_key(USER_MEMBERSHIPS_PATTERN,
+                                   organization_id=organization_id,
+                                   user_id=user_id)
+            ttl = USER_MEMBERSHIP_CACHE_TTL
+            await self.redis.set(key, serialize_data(membership_data), ex=ttl)
+            logger.info(f"Cached membership for user {user_id} in org {organization_id} (TTL: {ttl}s)")
+            return True
+
+        return await self._safe_redis_operation("membership caching", _cache, False)
+```
+
+#### __init__.py - Service Exports
+```python
+# cache-service/__init__.py
+from .service import CacheService
+from .models import CacheEntry, CacheStats
+from .types import CacheOperation, CacheResult
+from .utils import serialize_data, deserialize_data, generate_cache_key
+from .constants import USER_MEMBERSHIP_CACHE_TTL, USER_MEMBERSHIPS_PATTERN
+from fastapi import Depends
+from app.core.redis_client import get_redis_client
+
+# Dependency injection function
+async def get_cache_service(
+    redis_client=Depends(get_redis_client)
+) -> CacheService:
+    return CacheService(redis_client)
+
+__all__ = [
+    "CacheService",
+    "get_cache_service",
+    "CacheEntry",
+    "CacheStats",
+    "CacheOperation",
+    "CacheResult",
+    # Re-exports (as described in the doc):
+    "serialize_data",
+    "deserialize_data",
+    "generate_cache_key",
+    "USER_MEMBERSHIP_CACHE_TTL",
+    "USER_MEMBERSHIPS_PATTERN",
+]
+# cache-service/test_service.py
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from .service import CacheService
+from .types import CacheResult
+
+@pytest.mark.asyncio
+class TestCacheService:
+    @pytest.fixture
+    def mock_redis(self):
+        return AsyncMock()
+
+    @pytest.fixture
+    def cache_service(self, mock_redis):
+        return CacheService(mock_redis)
+
+    async def test_cache_user_memberships_success(self, cache_service, mock_redis):
+        """Test successful membership caching"""
+        # Arrange
+        mock_redis.set.return_value = True
+
+        # Act
+        result = await cache_service.cache_user_memberships(
+            "user123", "org456", {"role": "admin"}
+        )
+
+        # Assert
+        assert result is True
+        mock_redis.set.assert_called_once()
+
+    async def test_cache_user_memberships_redis_failure(self, cache_service, mock_redis):
+        """Test graceful handling of Redis failures"""
+        # Arrange
+        mock_redis.set.side_effect = Exception("Redis connection failed")
+
+        # Act
+        result = await cache_service.cache_user_memberships(
+            "user123", "org456", {"role": "admin"}
+        )
+
+        # Assert
+        assert result is False  # Should return fallback value
+```
+
+### Step 3: Update Imports Throughout Codebase
+
+#### Before Migration
+```python
+# routers/auth.py
+from app.services.cache_service import CacheService, get_cache_service
+
+# dependencies.py
+from app.services.cache_service import get_cache_service
+```
+
+#### After Migration
+```python
+# routers/auth.py - No changes needed if using __init__.py exports
+from app.services.cache_service import CacheService, get_cache_service
+
+# Alternative: Direct imports
+from app.services.cache_service.service import CacheService
+from app.services.cache_service import get_cache_service
+```
+
+### Step 4: Update Dependencies
+```python
+# dependencies.py
+async def get_cache_service(
+    redis_client=Depends(get_redis_client)
+) -> CacheService:
+    from app.services.cache_service import CacheService
+    return CacheService(redis_client)
+```
+
+### Step 5: Testing Migration
+```bash
+# Run service-specific tests
+cd backend/app/services/cache-service
+python -m pytest test_service.py -v
+
+# Run integration tests
+cd backend
+python test_redis_integration.py
+```
+
+## Migration Checklist
+
+- [ ] Create service folder structure
+- [ ] Split monolithic file into focused modules
+- [ ] Update all imports in codebase
+- [ ] Update dependency injection
+- [ ] Move and update tests
+- [ ] Test functionality
+- [ ] Update documentation
+- [ ] Commit changes
+
+## Benefits Achieved
+
+### Before Migration
+- Single file: 406 lines
+- Mixed concerns: caching logic + utilities + constants
+- Difficult to navigate and maintain
+- Tests in separate location
+
+### After Migration
+- **service.py**: 200 lines (core logic)
+- **utils.py**: 50 lines (helpers)
+- **constants.py**: 20 lines (configuration)
+- **test_service.py**: Co-located with service
+- Clear separation of concerns
+- Easy to find and modify specific functionality
+- Independent testing per module
+
+This migration pattern can be applied to all services in the codebase for improved maintainability and organization.

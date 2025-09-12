@@ -1,12 +1,29 @@
 ---
-globs: backend/app/services/*.py
+globs: backend/app/services/**/service.py,backend/app/services/**/__init__.py
 description: Service layer patterns for business logic and data operations
 ---
 
 # Service Layer Patterns
 
+## Service Folder Structure
+Each service should be organized in its own folder with clear separation of concerns:
+
+```
+services/
+├── service-name/
+│   ├── __init__.py           # Service exports and dependencies
+│   ├── service.py            # Main service class and business logic
+│   ├── models.py             # Service-specific Pydantic models
+│   ├── types.py              # Type definitions and enums
+│   ├── utils.py              # Helper functions and utilities
+│   ├── constants.py          # Service-specific constants
+│   ├── test_service.py       # Unit tests for the service
+│   └── integration_test.py   # Integration tests (if needed)
+```
+
 ## Service Structure
 ```python
+# service-name/service.py
 class ServiceName:
     def __init__(self, db=None, cache_service=None):
         self.collection = db.collection_name if db else None
@@ -15,6 +32,83 @@ class ServiceName:
     async def business_method(self, param: Type) -> ReturnType:
         # Business logic implementation
         pass
+```
+
+## Service File Organization
+
+### __init__.py
+```python
+# service-name/__init__.py
+from .service import ServiceName
+from .models import *
+from .types import *
+from .utils import *
+
+# Dependency injection function
+async def get_service_name(
+    db=Depends(get_database),
+    cache_service: CacheService = Depends(get_cache_service)
+) -> ServiceName:
+    return ServiceName(db, cache_service)
+
+__all__ = ["ServiceName", "get_service_name"]
+```
+
+### models.py - Service-specific Models
+```python
+# service-name/models.py
+from pydantic import BaseModel
+from typing import Optional
+
+class ServiceSpecificModel(BaseModel):
+    field1: str
+    field2: Optional[int] = None
+```
+
+### types.py - Type Definitions
+```python
+# service-name/types.py
+from enum import Enum
+
+class ServiceStatus(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+```
+
+### utils.py - Helper Functions
+```python
+# service-name/utils.py
+def format_service_data(data: dict) -> dict:
+    """Helper function for data formatting"""
+    return {k: v for k, v in data.items() if v is not None}
+```
+
+### constants.py - Service Constants
+```python
+# service-name/constants.py
+DEFAULT_TIMEOUT = 30
+MAX_RETRIES = 3
+SERVICE_NAME = "service-name"
+```
+
+### test_service.py - Unit Tests
+```python
+# service-name/test_service.py
+import pytest
+from unittest.mock import AsyncMock
+from .service import ServiceName
+
+@pytest.mark.asyncio
+async def test_business_method():
+    # Arrange
+    mock_db = AsyncMock()
+    service = ServiceName(mock_db)
+
+    # Act
+    result = await service.business_method("test")
+
+    # Assert
+    assert result is not None
 ```
 
 ## Dependency Injection

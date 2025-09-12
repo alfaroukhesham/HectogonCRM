@@ -14,9 +14,7 @@ from app.models.invite import (
     InviteRevoke, InviteListResponse, InviteStatus
 )
 from app.models.membership import MembershipRole
-from app.services.invite_service import InviteService
-from app.services.membership_service import MembershipService
-from app.services.cache_service import CacheService
+from app.services import InviteService, MembershipService, CacheService
 
 
 router = APIRouter(prefix="/invites", tags=["invites"])
