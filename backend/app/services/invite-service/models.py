@@ -1,6 +1,6 @@
 # invite-service/models.py
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -31,8 +31,8 @@ class InviteStats(BaseModel):
     accepted_invites: int = 0
     revoked_invites: int = 0
     expired_invites: int = 0
-    by_organization: Dict[str, int] = {}
-    by_role: Dict[str, int] = {}
+    by_organization: Dict[str, int] = Field(default_factory=dict)
+    by_role: Dict[str, int] = Field(default_factory=dict)
 
 class InviteBulkOperation(BaseModel):
     """Bulk operation request for invites"""
@@ -62,13 +62,15 @@ class InviteCreationRequest(BaseModel):
     send_email: bool = True
     custom_message: Optional[str] = None
     
-    @validator('max_uses')
+    @field_validator('max_uses')
+    @classmethod
     def max_uses_must_be_positive(cls, v):
         if v is not None and (not isinstance(v, int) or v <= 0):
             raise ValueError('Max uses must be a positive integer')
         return v
     
-    @validator('expires_hours')
+    @field_validator('expires_hours')
+    @classmethod
     def expires_hours_must_be_positive(cls, v):
         if v is not None and (not isinstance(v, int) or v <= 0):
             raise ValueError('Expires hours must be a positive integer')
@@ -79,16 +81,11 @@ class InviteAcceptanceRequest(BaseModel):
     code: str
     user_id: str
     
-    @validator('code')
-    def code_must_not_be_empty(cls, v):
+    @field_validator('code', 'user_id')
+    @classmethod
+    def not_empty_and_strip(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError('Invite code cannot be empty')
-        return v.strip()
-    
-    @validator('user_id')
-    def user_id_must_not_be_empty(cls, v):
-        if not v or not v.strip():
-            raise ValueError('User ID cannot be empty')
+            raise ValueError('Value: User ID cannot be empty')
         return v.strip()
 
 class InviteRevocationRequest(BaseModel):
@@ -97,7 +94,8 @@ class InviteRevocationRequest(BaseModel):
     revoked_by: str
     reason: Optional[str] = None
     
-    @validator('reason')
+    @field_validator('reason')
+    @classmethod
     def reason_length_limit(cls, v):
         if v and len(v) > 500:
             raise ValueError('Reason must be 500 characters or less')
@@ -113,7 +111,8 @@ class InviteListRequest(BaseModel):
     sort_order: Optional[SortOrder] = SortOrder.DESC
     include_expired: bool = False
     
-    @validator('limit')
+    @field_validator('limit')
+    @classmethod
     def limit_must_be_reasonable(cls, v):
         if v <= 0:
             raise ValueError('Limit must be positive')
@@ -121,13 +120,15 @@ class InviteListRequest(BaseModel):
             raise ValueError('Limit cannot exceed 1000')
         return v
     
-    @validator('skip')
+    @field_validator('skip')
+    @classmethod
     def skip_must_be_non_negative(cls, v):
         if v < 0:
             raise ValueError('Skip must be non-negative')
         return v
     
-    @validator('sort_by')
+    @field_validator('sort_by')
+    @classmethod
     def validate_sort_field(cls, v):
         allowed_fields = ['created_at', 'expires_at', 'status', 'email']
         if v and v not in allowed_fields:
@@ -151,7 +152,8 @@ class InviteEmailRequest(BaseModel):
     invite_id: str
     custom_message: Optional[str] = None
     
-    @validator('custom_message')
+    @field_validator('custom_message')
+    @classmethod
     def custom_message_length_limit(cls, v):
         if v and len(v) > 1000:
             raise ValueError('Custom message must be 1000 characters or less')
@@ -163,7 +165,8 @@ class InviteCleanupRequest(BaseModel):
     dry_run: bool = False
     older_than_days: Optional[int] = None
     
-    @validator('older_than_days')
+    @field_validator('older_than_days')
+    @classmethod
     def older_than_days_must_be_positive(cls, v):
         if v is not None and v <= 0:
             raise ValueError('older_than_days must be a positive integer')
@@ -194,4 +197,4 @@ class UserInviteSummary(BaseModel):
     total_invites_sent: int
     pending_invites_sent: int
     accepted_invites_sent: int
-    organizations: List[str] = []
+    organizations: List[str] = Field(default_factory=list)

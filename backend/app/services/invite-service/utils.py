@@ -52,33 +52,37 @@ def create_invite_dict(invite_data: Dict[str, Any], invited_by: str) -> InviteDi
 
 def create_update_dict(update_data: Dict[str, Any]) -> Dict[str, Any]:
     """Create update dictionary filtering None values and adding timestamp"""
-    update_dict = {k: v for k, v in update_data.items() if v is not None}
-    if update_dict:  # Only add timestamp if there are actual updates
-        update_dict["updated_at"] = datetime.now(timezone.utc)
-    return update_dict
+    fields = {k: v for k, v in update_data.items() if v is not None}
+    if not fields:
+        return {}
+    fields["updated_at"] = datetime.now(timezone.utc)
+    return {"$set": fields}
 
 def create_revoke_update_dict(revoked_by: str, reason: Optional[str] = None) -> Dict[str, Any]:
     """Create update dictionary for revoking an invite"""
-    update_dict = {
+    update_fields = {
         "status": InviteStatus.REVOKED.value,
         "revoked_by": revoked_by,
         "revoked_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
+        "updated_at": datetime.now(timezone.utc),
     }
-    
+
     if reason:
-        update_dict["revoke_reason"] = reason
-    
-    return update_dict
+        update_fields["revoke_reason"] = reason
+
+    return {"$set": update_fields}
 
 def create_accept_update_dict(user_id: str, current_uses: int) -> Dict[str, Any]:
     """Create update dictionary for accepting an invite"""
+    now = datetime.now(timezone.utc)
     return {
-        "status": InviteStatus.ACCEPTED.value,
-        "used_by": user_id,
-        "used_at": datetime.now(timezone.utc),
-        "current_uses": current_uses + 1,
-        "updated_at": datetime.now(timezone.utc)
+        "$set": {
+            "status": InviteStatus.ACCEPTED.value,
+            "used_by": user_id,
+            "used_at": now,
+            "updated_at": now,
+        },
+        "$inc": {"current_uses": 1},
     }
 
 def validate_invite_usability(invite: Dict[str, Any]) -> InviteValidation:
@@ -125,7 +129,8 @@ def check_email_match(invite: Dict[str, Any], user_email: str) -> bool:
 
 def build_organization_invites_pipeline(organization_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
     """Build aggregation pipeline for organization invites"""
-    match_query = {"organization_id": organization_id}
+    org_oid = validate_and_convert_object_id(organization_id, "organization ID")
+    match_query = {"organization_id": org_oid}
     if status:
         match_query["status"] = status
     
@@ -164,6 +169,10 @@ def extract_invite_list_response_data(doc: Dict[str, Any]) -> Dict[str, Any]:
     org = doc["organization"]
     inviter = doc["inviter"]
     now = datetime.now(timezone.utc)
+    expires_at = doc["expires_at"]
+    if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    is_expired = expires_at < now
     
     return {
         "id": str(doc["_id"]),
@@ -179,12 +188,12 @@ def extract_invite_list_response_data(doc: Dict[str, Any]) -> Dict[str, Any]:
         "max_uses": doc["max_uses"],
         "current_uses": doc["current_uses"],
         "created_at": doc["created_at"],
-        "is_expired": doc["expires_at"] < now,
+        "is_expired": is_expired,
         "is_usable": (
-            doc["status"] == InviteStatus.PENDING.value and
-            doc["expires_at"] > now and
-            doc["current_uses"] < doc["max_uses"]
-        )
+            doc["status"] not in (InviteStatus.REVOKED.value, InviteStatus.EXPIRED.value)
+            and not is_expired
+            and doc["current_uses"] < doc["max_uses"]
+        ),
     }
 
 def create_email_context(

@@ -1,8 +1,8 @@
 # cache-service/models.py
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, HttpUrl
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 class CacheEntry(BaseModel):
     """Generic cache entry model"""
@@ -22,8 +22,8 @@ class CacheStats(BaseModel):
 class OAuthStateData(BaseModel):
     """OAuth state data model for caching"""
     provider: str
-    redirect_uri: str
-    created_at: datetime
+    redirect_uri: HttpUrl
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PasswordResetTokenData(BaseModel):
     """Password reset token data model"""
@@ -39,8 +39,8 @@ class DashboardStatsCache(BaseModel):
     """Dashboard statistics cache model"""
     organization_id: str
     stats: Dict[str, Any]
-    cached_at: datetime
-    ttl: int
+    cached_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    ttl: int = Field(ge=1, description="Seconds to live")
 
 class MembershipCacheData(BaseModel):
     """Membership data for caching"""

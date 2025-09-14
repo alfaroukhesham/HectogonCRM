@@ -1,5 +1,9 @@
 # membership-service/constants.py
 
+from typing import Union
+from bson import ObjectId
+from bson.errors import InvalidId
+
 # Error messages
 USER_NOT_FOUND_ERROR = "User not found"
 ORGANIZATION_NOT_FOUND_ERROR = "Organization not found"
@@ -13,13 +17,25 @@ USERS_COLLECTION = "users"
 ORGANIZATIONS_COLLECTION = "organizations"
 
 # MongoDB Aggregation Pipeline Components
-def user_match_stage(user_id: str) -> dict:
-    """Create a MongoDB match stage for filtering by user_id."""
-    return {"$match": {"user_id": user_id}}
+def user_match_stage(user_id: "Union[str, ObjectId]") -> dict:
+    """Create a MongoDB $match stage for filtering by user_id (accepts str or ObjectId)."""
+    if user_id is None:
+        raise ValueError(INVALID_USER_ID_ERROR)
+    try:
+        uid = user_id if isinstance(user_id, ObjectId) else ObjectId(user_id)
+    except (InvalidId, TypeError):
+        raise ValueError(INVALID_USER_ID_ERROR)
+    return {"$match": {"user_id": uid}}
 
-def org_match_stage(organization_id: str) -> dict:
-    """Create a MongoDB match stage for filtering by organization_id."""
-    return {"$match": {"organization_id": organization_id}}
+def org_match_stage(organization_id: "Union[str, ObjectId]") -> dict:
+    """Create a MongoDB $match stage for filtering by organization_id (accepts str or ObjectId)."""
+    if organization_id is None:
+        raise ValueError(INVALID_ORGANIZATION_ID_ERROR)
+    try:
+        oid = organization_id if isinstance(organization_id, ObjectId) else ObjectId(organization_id)
+    except (InvalidId, TypeError):
+        raise ValueError(INVALID_ORGANIZATION_ID_ERROR)
+    return {"$match": {"organization_id": oid}}
 
 # Projection fields for user memberships
 USER_MEMBERSHIP_PROJECTION = {

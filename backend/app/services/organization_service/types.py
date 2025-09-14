@@ -1,10 +1,13 @@
 # organization-service/types.py
 
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, TYPE_CHECKING, TypeAlias
 from enum import Enum
 
 if TYPE_CHECKING:
-    from motor.motor_asyncio import AsyncIOMotorDatabase
+    from motor.motor_asyncio import AsyncIOMotorDatabase as _AsyncIOMotorDatabase
+    DatabaseType: TypeAlias = _AsyncIOMotorDatabase
+else:
+    from typing import Any as DatabaseType
 
 # Import organization models to re-export them
 from app.models.organization import Organization, OrganizationCreate, OrganizationUpdate, OrganizationResponse
@@ -27,7 +30,6 @@ class SlugGenerationStrategy(str, Enum):
     UUID = "uuid"
 
 # Type aliases for clarity
-DatabaseType = "AsyncIOMotorDatabase"
 OrganizationDict = Dict[str, Any]
 OrganizationList = List[Organization]
 UserId = str
@@ -69,7 +71,7 @@ class InvalidOrganizationDataError(OrganizationError):
 # Bulk operation types
 class BulkOrganizationOperation:
     """Bulk operation for organizations"""
-    def __init__(self, operation: str, organizations: List[Dict[str, Any]]):
+    def __init__(self, operation: OrganizationOperation, organizations: List[OrganizationDict]):
         self.operation = operation
         self.organizations = organizations
 

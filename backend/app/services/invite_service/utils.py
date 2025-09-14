@@ -25,22 +25,24 @@ def generate_invite_code(length: int = INVITE_CODE_LENGTH) -> InviteCode:
 def create_invite_dict(invite_data: Dict[str, Any], invited_by: str) -> InviteDict:
     """Create invite dictionary with timestamps and defaults"""
     invite_dict = invite_data.copy()
+    now = datetime.now(timezone.utc)
     invite_dict["invited_by"] = invited_by
-    invite_dict["created_at"] = datetime.now(timezone.utc)
-    invite_dict["updated_at"] = datetime.now(timezone.utc)
+    invite_dict["created_at"] = now
+    invite_dict["updated_at"] = now
     
     # Set defaults if not provided
     if "max_uses" not in invite_dict:
         invite_dict["max_uses"] = DEFAULT_MAX_USES
+
+    # Always force server-controlled fields
+    invite_dict["current_uses"] = 0
     
-    if "current_uses" not in invite_dict:
-        invite_dict["current_uses"] = 0
+    if "expires_at" in invite_dict and isinstance(invite_dict["expires_at"], datetime):
+        invite_dict["expires_at"] = ensure_utc_aware(invite_dict["expires_at"])
+    else:
+        invite_dict["expires_at"] = now + timedelta(hours=DEFAULT_EXPIRES_HOURS)
     
-    if "expires_at" not in invite_dict:
-        invite_dict["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=DEFAULT_EXPIRES_HOURS)
-    
-    if "status" not in invite_dict:
-        invite_dict["status"] = InviteStatus.PENDING.value
+    invite_dict["status"] = InviteStatus.PENDING.value
     
     return invite_dict
 
@@ -105,10 +107,16 @@ def create_atomic_accept_update(user_id: str) -> Dict[str, Any]:
 
 def create_atomic_accept_filter(invite_id: str) -> Dict[str, Any]:
     """Create filter for atomic invite acceptance that ensures usage limits are respected."""
+    try:
+        _id = ObjectId(invite_id)
+    except InvalidId:
+        raise ValueError(f"Invalid invite ID format: {invite_id}")
+    now = datetime.now(timezone.utc)
     return {
-        "_id": ObjectId(invite_id),
+        "_id": _id,
         "status": InviteStatus.PENDING.value,
-        "$expr": {"$lt": ["$current_uses", "$max_uses"]}
+        "expires_at": {"$gt": now},
+        "$expr": {"$lt": ["$current_uses", "$max_uses"]},
     }
 
 def create_atomic_accept_update_pipeline(user_id: str) -> List[Dict[str, Any]]:
@@ -258,6 +266,8 @@ def create_email_context(
     inviter_data: Dict[str, Any]
 ) -> EmailContext:
     """Create email context for sending invite emails"""
+    if not invite.get("email"):
+        raise ValueError("Invite email is required to build email context")
     return EmailContext(
         to_email=invite["email"],
         organization_name=org_data["name"],

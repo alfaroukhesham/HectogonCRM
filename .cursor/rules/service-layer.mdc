@@ -1,5 +1,7 @@
 ---
-globs: backend/app/services/**/service.py,backend/app/services/**/__init__.py
+globs:
+  - backend/app/services/**/service.py
+  - backend/app/services/**/__init__.py
 description: Service layer patterns for business logic and data operations
 ---
 
@@ -39,19 +41,28 @@ class ServiceName:
 ### __init__.py
 ```python
 # service-name/__init__.py
+from fastapi import Depends
+from typing import Optional
 from .service import ServiceName
-from .models import *
-from .types import *
-from .utils import *
+# Import DI providers and types from their real locations in your codebase:
+# from backend.app.dependencies import get_database, get_cache_service
+# from backend.app.services.cache import CacheService
 
-# Dependency injection function
 async def get_service_name(
-    db=Depends(get_database),
-    cache_service: CacheService = Depends(get_cache_service)
+    db = Depends(get_database),
+    cache_service: "CacheService" = Depends(get_cache_service),
 ) -> ServiceName:
-    return ServiceName(db, cache_service)
+    return ServiceName(repo=db, cache_service=cache_service)
 
-__all__ = ["ServiceName", "get_service_name"]
+__all__ = ("ServiceName", "get_service_name")
+
+# Optional FastAPI-modern style using Annotated:
+# from typing import Annotated
+# async def get_service_name(
+#     db: Annotated[DB, Depends(get_database)],
+#     cache_service: Annotated[CacheService, Depends(get_cache_service)],
+# ) -> ServiceName:
+#     return ServiceName(repo=db, cache_service=cache_service)
 ```
 
 ### models.py - Service-specific Models

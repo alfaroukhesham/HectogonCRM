@@ -26,7 +26,7 @@ touch __init__.py service.py models.py types.py utils.py constants.py test_servi
 
 #### constants.py - Extract Constants
 ```python
-# cache-service/constants.py
+# cache_service/constants.py
 # Cache TTL values
 USER_MEMBERSHIP_CACHE_TTL = 3600  # 1 hour
 DASHBOARD_CACHE_TTL = 300         # 5 minutes
@@ -38,7 +38,7 @@ DASHBOARD_STATS_PATTERN = "dashboard:stats:{organization_id}"
 
 #### types.py - Extract Enums/Types
 ```python
-# cache-service/types.py
+# cache_service/types.py
 from enum import Enum
 from typing import Dict, Any, Optional
 
@@ -57,7 +57,7 @@ class CacheResult:
 
 #### utils.py - Extract Helper Functions
 ```python
-# cache-service/utils.py
+# cache_service/utils.py
 import json
 from typing import Any
 
@@ -76,7 +76,7 @@ def generate_cache_key(pattern: str, **kwargs) -> str:
 
 #### models.py - Extract Models
 ```python
-# cache-service/models.py
+# cache_service/models.py
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
@@ -94,7 +94,7 @@ class CacheStats(BaseModel):
 
 #### service.py - Core Service Logic
 ```python
-# cache-service/service.py
+# cache_service/service.py
 import logging
 from typing import Optional, Dict, Any, List
 from fastapi import Depends
@@ -112,6 +112,8 @@ class CacheService:
     """Comprehensive caching service for Redis-based token and data caching."""
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
+
+    async def _safe_redis_operation(self, operation_name: str, operation_func, fallback_value=None):
         """Safely execute Redis operations with error handling and fallback."""
         try:
             return await operation_func()
@@ -140,7 +142,7 @@ class CacheService:
 
 #### __init__.py - Service Exports
 ```python
-# cache-service/__init__.py
+# cache_service/__init__.py
 from .service import CacheService
 from .models import CacheEntry, CacheStats
 from .types import CacheOperation, CacheResult
@@ -247,7 +249,7 @@ async def get_cache_service(
 ### Step 5: Testing Migration
 ```bash
 # Run service-specific tests
-cd backend/app/services/cache-service
+cd backend/app/services/cache_service
 python -m pytest test_service.py -v
 
 # Run integration tests

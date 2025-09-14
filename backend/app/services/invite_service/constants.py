@@ -1,6 +1,6 @@
 # invite-service/constants.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Error messages
 INVITE_NOT_FOUND_ERROR = "Invite not found"
@@ -19,8 +19,10 @@ INVITES_COLLECTION = "invites"
 ORGANIZATIONS_COLLECTION = "organizations"
 USERS_COLLECTION = "users"
 
-# Retry limits
-MAX_CODE_GEN_ATTEMPTS = 5
+# Retry limits (use a single source of truth)
+# NOTE: Remove the alias after callers migrate.
+MAX_INVITE_CODE_GENERATION_ATTEMPTS = 10
+MAX_CODE_GEN_ATTEMPTS = MAX_INVITE_CODE_GENERATION_ATTEMPTS  # deprecated alias
 
 # Default values
 DEFAULT_MAX_USES = 1
@@ -75,23 +77,31 @@ def get_expired_invites_query(current_time: datetime = None) -> dict:
     """Get query for expired invites.
     
     Args:
-        current_time: Optional datetime to compare against. Defaults to datetime.utcnow()
+        current_time: Optional datetime to compare against. Defaults to datetime.now(timezone.utc)
         
     Returns:
         MongoDB query dict for expired invites
     """
     if current_time is None:
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
     
     return {
         "status": "pending",
-        "expires_at": {"$lt": current_time}
+        "expires_at": {"$lte": current_time}  # inclusive: expires at or before current time
     }
 
-def usable_invite_filter(now):
+def usable_invite_filter(now: datetime) -> dict:
+    """Get query for usable invites.
+    
+    Args:
+        now: Current datetime (should be timezone-aware UTC)
+        
+    Returns:
+        MongoDB query dict for usable invites
+    """
     return {
         "status": "pending",
-        "expires_at": {"$gt": now},
+        "expires_at": {"$gt": now},  # expires after current time
         "$expr": {
             "$lt": [
                 {"$ifNull": ["$current_uses", 0]},
@@ -113,4 +123,4 @@ VALID_INVITE_ROLES = ["viewer", "editor", "admin"]
 # Limits
 MAX_INVITES_PER_ORGANIZATION = 1000
 MAX_INVITES_PER_USER_PER_DAY = 50
-MAX_INVITE_CODE_GENERATION_ATTEMPTS = 10
+# MAX_INVITE_CODE_GENERATION_ATTEMPTS moved above with retry limits

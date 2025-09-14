@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 
-from .service import InviteService
-from .types import (
+from app.services.invite_service.service import InviteService
+from app.services.invite_service.types import (
     InviteNotFoundError, InviteExpiredError, InviteRevokedError,
     InviteMaxUsesReachedError, EmailMismatchError, EmailDeliveryError,
     InvalidInviteDataError, InviteStatus
 )
-from .models import InviteCreate, InviteUpdate, Invite, InviteListResponse
-from .constants import (
+from app.services.invite_service.models import InviteCreate, InviteUpdate, Invite, InviteListResponse
+from app.services.invite_service.constants import (
     INVITE_NOT_FOUND_ERROR, EMAIL_MISMATCH_ERROR, USER_NOT_FOUND_ERROR
 )
 
@@ -421,8 +421,11 @@ class TestInviteService:
             {"_id": "expired", "count": 3}
         ]
         
-        mock_cursor = AsyncMock()
-        mock_cursor.__aiter__ = AsyncMock(return_value=iter(stats_data))
+        async def _agen(items):
+            for item in items:
+                yield item
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__.return_value = _agen(stats_data)
         mock_db.invites.aggregate.return_value = mock_cursor
 
         # Act

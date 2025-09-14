@@ -3,10 +3,9 @@
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
-from fastapi import Depends
-from app.core.redis_client import get_redis_client
 from app.core.config import settings
 import redis.asyncio as redis
+from redis.exceptions import RedisError
 
 from .constants import (
     DASHBOARD_STATS_KEY, REFRESH_TOKEN_KEY, OAUTH_STATE_KEY, PASSWORD_RESET_KEY,
@@ -32,7 +31,7 @@ class CacheService:
     Provides graceful fallback behavior when Redis is unavailable.
     """
     
-    def __init__(self, redis_client: redis.Redis = Depends(get_redis_client)):
+    def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
 
     async def _safe_redis_operation(self, operation_name: str, operation_func, fallback_value=None):
@@ -49,7 +48,7 @@ class CacheService:
         """
         try:
             return await operation_func()
-        except redis.exceptions.RedisError as e:
+        except RedisError as e:
             logger.error(f"Redis {operation_name} failed: {e}")
             return fallback_value
         except Exception as e:
@@ -102,11 +101,12 @@ class CacheService:
         """Stores a user's refresh token in Redis with a TTL."""
         async def _store():
             # Generate session_id if not provided (for backward compatibility)
-            if session_id is None:
+            actual_session_id = session_id
+            if actual_session_id is None:
                 import uuid
-                session_id = str(uuid.uuid4())
+                actual_session_id = str(uuid.uuid4())
             
-            key = format_cache_key(REFRESH_TOKEN_KEY, user_id=user_id, session_id=session_id)
+            key = format_cache_key(REFRESH_TOKEN_KEY, user_id=user_id, session_id=actual_session_id)
             ttl_seconds = calculate_refresh_token_ttl(settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
             await self.redis.set(key, token, ex=ttl_seconds)
             logger.info(LOG_REFRESH_TOKEN_STORED.format(user_id=user_id, ttl_seconds=ttl_seconds))
@@ -140,7 +140,7 @@ class CacheService:
                 return decode_redis_value(token) if token else None
             else:
                 # Fallback: scan for any refresh token for this user
-                pattern = f"refresh_token:{user_id}:*"
+                pattern = format_cache_key(REFRESH_TOKEN_KEY, user_id=user_id, session_id="*")
                 async for key in self.redis.scan_iter(match=pattern):
                     token = await self.redis.get(key)
                     if token:
@@ -149,19 +149,19 @@ class CacheService:
 
         return await self._safe_redis_operation("refresh token retrieval", _get)
 
-    async def revoke_refresh_token(self, user_id: str):
-        """Revokes a user's refresh token by deleting it from Redis."""
+    async def revoke_refresh_token(self, user_id: str, session_id: Optional[str] = None) -> bool:
+        """Revoke a user's refresh token; if session_id is provided, only that session."""
         async def _revoke():
-            # Scan for all refresh tokens for this user
-            pattern = f"refresh_token:{user_id}:*"
-            keys_to_delete = []
-            async for key in self.redis.scan_iter(match=pattern):
-                keys_to_delete.append(key)
-            
-            if keys_to_delete:
-                result = await self.redis.delete(*keys_to_delete)
+            if session_id:
+                key = format_cache_key(REFRESH_TOKEN_KEY, user_id=user_id, session_id=session_id)
+                result = await self.redis.delete(key)
             else:
-                result = 0
+                # Back-compat: delete all sessions
+                pattern = format_cache_key(REFRESH_TOKEN_KEY, user_id=user_id, session_id="*")
+                keys_to_delete = []
+                async for key in self.redis.scan_iter(match=pattern):
+                    keys_to_delete.append(key)
+                result = await self.redis.delete(*keys_to_delete) if keys_to_delete else 0
             logger.info(LOG_REFRESH_TOKEN_REVOKED.format(user_id=user_id, result=result))
             return result > 0
 
@@ -171,7 +171,7 @@ class CacheService:
         """Revoke all refresh tokens for a user across all sessions."""
         async def _revoke_all():
             # Scan for all refresh tokens for this user
-            pattern = f"refresh_token:{user_id}:*"
+            pattern = format_cache_key(REFRESH_TOKEN_KEY, user_id=user_id, session_id="*")
             keys_to_delete = []
             async for key in self.redis.scan_iter(match=pattern):
                 keys_to_delete.append(key)

@@ -162,8 +162,9 @@ def build_organization_search_query(
     query = {}
     
     if name_pattern:
-        # Case-insensitive partial match on name
-        query["name"] = {"$regex": name_pattern, "$options": "i"}
+        # Case-insensitive literal substring match on name
+        safe = re.escape(name_pattern.strip())
+        query["name"] = {"$regex": f".*{safe}.*", "$options": "i"}
     
     if created_by:
         query["created_by"] = created_by

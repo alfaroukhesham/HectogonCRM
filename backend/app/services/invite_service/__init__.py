@@ -1,6 +1,7 @@
 # invite-service/__init__.py
 
 from fastapi import Depends
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from .service import InviteService
 from .models import *
 from .types import *
@@ -9,13 +10,13 @@ from .constants import *
 
 # Dependency injection function
 from app.core.database import get_database
+from app.core.dependencies import get_email_service
 from app.core.email import EmailService
 
-async def get_invite_service(
-    db = Depends(get_database)
+def get_invite_service(
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    email_service: EmailService = Depends(get_email_service),
 ) -> InviteService:
-    # Create EmailService instance for now - in production this would be properly injected
-    from app.core.email import email_service
     return InviteService(db, email_service)
 
 __all__ = [

@@ -6,6 +6,7 @@ from redis.asyncio import Redis
 from app.core.security import verify_token
 from app.core.database import get_database
 from app.core.redis_client import get_redis_client
+from app.core.email import EmailService
 from app.models.user import User, TokenData
 from app.models.membership import MembershipRole, MembershipStatus, OrganizationContext
 from bson import ObjectId
@@ -321,6 +322,12 @@ class CommonServices:
         # self.audit = audit
         # self.email = email
 
+
+def get_email_service() -> EmailService:
+    """Get email service dependency."""
+    from app.core.email import email_service
+    return email_service
+    # TODO: inject email service from config
 
 def get_common_services(
     cache: Any = Depends(get_cache_service),

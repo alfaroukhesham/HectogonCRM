@@ -84,7 +84,7 @@ def validate_object_id(object_id: str, field_name: str = "ID") -> ObjectId:
     """Validate and convert string to ObjectId"""
     try:
         return ObjectId(object_id)
-    except InvalidId:
+    except (InvalidId, TypeError, ValueError):
         raise ValueError(f"Invalid {field_name} format")
 
 def normalize_id(value: Any) -> Optional[str]:
@@ -127,16 +127,18 @@ def convert_member_dict_to_response(doc: Dict[str, Any]) -> Dict[str, Any]:
         "organization_id": normalize_id(doc.get("organization_id")),
         "role": doc.get("role"),
         "status": doc.get("status"),
-        "invited_by": doc.get("invited_by"),
+        "invited_by": normalize_id(doc.get("invited_by")),
         "joined_at": doc.get("joined_at"),
         "last_accessed": doc.get("last_accessed")
     }
 
 def has_sufficient_role(user_role: MembershipRole, required_role: MembershipRole) -> bool:
     """Check if user has sufficient role for operation"""
-    user_level = ROLE_HIERARCHY.get(user_role.value, 0)
-    required_level = ROLE_HIERARCHY.get(required_role.value, 0)
-    return user_level >= required_level
+    user_key = getattr(user_role, "value", user_role)
+    req_key = getattr(required_role, "value", required_role)
+    if user_key not in ROLE_HIERARCHY or req_key not in ROLE_HIERARCHY:
+        raise ValueError("Unknown role provided")
+    return ROLE_HIERARCHY[user_key] >= ROLE_HIERARCHY[req_key]
 
 def create_membership_update_dict(update_data: Dict[str, Any]) -> Dict[str, Any]:
     """Create update dictionary with timestamp"""

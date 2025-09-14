@@ -136,7 +136,7 @@ class InviteService:
         try:
             result = await self.collection.update_one(
                 build_invite_query_by_id(invite_id),
-                {"$set": update_dict}
+                update_dict
             )
             
             if result.modified_count:
@@ -158,7 +158,7 @@ class InviteService:
         try:
             result = await self.collection.update_one(
                 build_invite_query_by_id(invite_id),
-                {"$set": update_dict}
+                update_dict
             )
             
             if result.modified_count:
@@ -198,7 +198,7 @@ class InviteService:
             if not user_data:
                 raise InviteNotFoundError(USER_NOT_FOUND_ERROR)
             
-            if not check_email_match(invite.model_dump(), user_data["email"]):
+            if not check_email_match(invite.model_dump(), user_data.get("email", "")):
                 raise EmailMismatchError(EMAIL_MISMATCH_ERROR)
         
         # Atomic update to prevent race conditions
@@ -237,6 +237,7 @@ class InviteService:
                 raise InviteNotFoundError(INVITE_NOT_USABLE_ERROR)
             
             # Create membership after successful atomic update
+            # Use idempotent creation to handle retries and race conditions
             from app.services import MembershipService
             membership_service = MembershipService(self.db)
             
@@ -248,7 +249,12 @@ class InviteService:
                 invited_by=invite.invited_by
             )
             
-            await membership_service.create_membership(membership_data)
+            # Use idempotent membership creation with retry logic
+            membership = await self._create_membership_with_retry(
+                membership_service, 
+                membership_data, 
+                max_retries=3
+            )
             
             logger.info(LOG_MEMBERSHIP_CREATED.format(
                 user_id=user_id, 
@@ -264,6 +270,8 @@ class InviteService:
             raise e
         except Exception as e:
             logger.error(f"Error accepting invite {code}: {e}")
+            # Attempt compensation: rollback invite acceptance if membership creation failed
+            await self._compensate_invite_acceptance(invite.id, user_id)
             raise
     
     async def get_organization_invites(
@@ -415,7 +423,8 @@ class InviteService:
         try:
             match_query = {}
             if organization_id:
-                match_query["organization_id"] = organization_id
+                org_oid = validate_and_convert_object_id(organization_id, "organization ID")
+                match_query["organization_id"] = org_oid
             
             pipeline = [
                 {"$match": match_query},
@@ -460,3 +469,105 @@ class InviteService:
                 "revoked_invites": 0,
                 "expired_invites": 0
             }
+    
+    async def _create_membership_with_retry(
+        self, 
+        membership_service, 
+        membership_data, 
+        max_retries: int = 3
+    ):
+        """Create membership with retry logic for idempotent operations.
+        
+        Args:
+            membership_service: MembershipService instance
+            membership_data: Membership data to create
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            Membership: Created or existing membership
+            
+        Raises:
+            Exception: If all retry attempts fail
+        """
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Use idempotent creation (allow_existing=True)
+                membership = await membership_service.create_membership(
+                    membership_data, 
+                    allow_existing=True
+                )
+                return membership
+                
+            except Exception as e:
+                last_exception = e
+                if attempt < max_retries:
+                    # Wait before retry (exponential backoff)
+                    import asyncio
+                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"Membership creation attempt {attempt + 1} failed, retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"All {max_retries + 1} membership creation attempts failed")
+        
+        # If we get here, all retries failed
+        raise last_exception
+    
+    async def _compensate_invite_acceptance(self, invite_id: str, user_id: str):
+        """Attempt to compensate for failed invite acceptance by rolling back the atomic update.
+        
+        This is a best-effort compensation that tries to revert the invite to pending status
+        if the membership creation failed after the atomic invite acceptance.
+        
+        Args:
+            invite_id: ID of the invite to compensate
+            user_id: ID of the user who accepted the invite
+        """
+        try:
+            # Check if membership actually exists despite the error
+            from app.services import MembershipService
+            membership_service = MembershipService(self.db)
+            
+            # Get the invite to find organization_id
+            invite = await self.get_invite_by_id(invite_id)
+            if not invite:
+                logger.warning(f"Cannot compensate invite {invite_id}: invite not found")
+                return
+            
+            # Check if membership exists
+            existing_membership = await membership_service.get_membership(
+                user_id, 
+                invite.organization_id
+            )
+            
+            if existing_membership:
+                # Membership exists, so the operation actually succeeded
+                logger.info(f"Compensation not needed: membership exists for user {user_id} in organization {invite.organization_id}")
+                return
+            
+            # No membership exists, attempt to rollback the invite acceptance
+            # This is a best-effort operation and may not always succeed due to race conditions
+            rollback_update = {
+                "$set": {
+                    "status": InviteStatus.PENDING.value,
+                    "used_by": None,
+                    "used_at": None,
+                    "updated_at": datetime.now(timezone.utc)
+                },
+                "$inc": {"current_uses": -1}  # Decrement the usage count
+            }
+            
+            result = await self.collection.update_one(
+                {"_id": ObjectId(invite_id)},
+                rollback_update
+            )
+            
+            if result.modified_count > 0:
+                logger.info(f"Successfully compensated invite {invite_id}: reverted to pending status")
+            else:
+                logger.warning(f"Compensation failed for invite {invite_id}: no documents modified")
+                
+        except Exception as e:
+            # Compensation is best-effort, don't raise errors
+            logger.error(f"Error during compensation for invite {invite_id}: {e}")

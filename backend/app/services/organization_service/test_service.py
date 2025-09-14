@@ -5,6 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 from bson import ObjectId
 
+# helper for async iteration over lists in tests
+async def _aiter(items):
+    for item in items:
+        yield item
+
 from .service import OrganizationService
 from .types import (
     SlugExistsError, OrganizationNotFoundError, InvalidOrganizationDataError,
@@ -245,13 +250,16 @@ class TestOrganizationService:
         
         # Mock session and transaction
         mock_session = AsyncMock()
-        mock_transaction = AsyncMock()
+        mock_transaction = MagicMock()
+        # Make start_transaction usable as an async context manager
+        mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
+        mock_transaction.__aexit__ = AsyncMock(return_value=None)
         mock_session.start_transaction.return_value = mock_transaction
         mock_db.client.start_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_db.client.start_session.return_value.__aexit__ = AsyncMock(return_value=None)
-        
-        mock_db.organizations.delete_one.return_value = AsyncMock(deleted_count=1)
-        mock_db.memberships.delete_many.return_value = AsyncMock(deleted_count=3)
+
+        mock_db.organizations.delete_one.return_value = MagicMock(deleted_count=1)
+        mock_db.memberships.delete_many.return_value = MagicMock(deleted_count=3)
 
         # Act
         result = await organization_service.delete_organization(org_id)
@@ -281,9 +289,12 @@ class TestOrganizationService:
             }
         ]
         
-        mock_cursor = AsyncMock()
-        mock_cursor.__aiter__ = AsyncMock(return_value=iter(org_data_list))
-        mock_db.organizations.find.return_value.skip.return_value.limit.return_value = mock_cursor
+        cursor = MagicMock()
+        cursor.skip.return_value = cursor
+        cursor.limit.return_value = cursor
+        cursor.sort.return_value = cursor  # tolerate sort() in service
+        cursor.__aiter__.return_value = _aiter(org_data_list)
+        mock_db.organizations.find.return_value = cursor
 
         # Act
         result = await organization_service.list_organizations()
@@ -358,8 +369,8 @@ class TestOrganizationService:
             {"organization_id": org_id_1},
             {"organization_id": org_id_2}
         ]
-        mock_membership_cursor = AsyncMock()
-        mock_membership_cursor.__aiter__ = AsyncMock(return_value=iter(membership_data))
+        mock_membership_cursor = MagicMock()
+        mock_membership_cursor.__aiter__.return_value = _aiter(membership_data)
         mock_db.memberships.find.return_value = mock_membership_cursor
         
         # Mock organization data
@@ -381,8 +392,8 @@ class TestOrganizationService:
                 "updated_at": datetime.now(timezone.utc)
             }
         ]
-        mock_org_cursor = AsyncMock()
-        mock_org_cursor.__aiter__ = AsyncMock(return_value=iter(org_data_list))
+        mock_org_cursor = MagicMock()
+        mock_org_cursor.__aiter__.return_value = _aiter(org_data_list)
         mock_db.organizations.find.return_value = mock_org_cursor
 
         # Act

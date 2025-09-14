@@ -1,6 +1,12 @@
 # invite-service/models.py
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, EmailStr
+try:
+    # Pydantic v2
+    from pydantic import field_validator as validator  # type: ignore
+except ImportError:  # pragma: no cover
+    # Pydantic v1
+    from pydantic import validator  # type: ignore
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -32,6 +38,19 @@ class InviteBulkOperation(BaseModel):
     """Bulk operation request for invites"""
     operation: str  # create, revoke, cleanup
     invites: List[Dict[str, Any]]
+
+    @validator('operation')
+    def operation_whitelist(cls, v):
+        allowed = {'create', 'revoke', 'cleanup'}
+        if v not in allowed:
+            raise ValueError(f'operation must be one of {sorted(allowed)}')
+        return v
+
+    @validator('invites')
+    def invites_non_empty(cls, v):
+        if not v:
+            raise ValueError('invites must not be empty')
+        return v
 
 class InviteSearchFilters(BaseModel):
     """Advanced search filters for invites"""
@@ -144,6 +163,12 @@ class InviteEmailRequest(BaseModel):
     invite_id: str
     custom_message: Optional[str] = None
     
+    @validator('invite_id')
+    def invite_id_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Invite ID cannot be empty')
+        return v.strip()
+    
     @validator('custom_message')
     def custom_message_length_limit(cls, v):
         if v and len(v) > 1000:
@@ -155,6 +180,12 @@ class InviteCleanupRequest(BaseModel):
     organization_id: Optional[str] = None
     dry_run: bool = False
     older_than_days: Optional[int] = None
+
+    @validator('older_than_days')
+    def older_than_days_positive(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError('older_than_days must be a positive integer')
+        return v
 
 class InviteCleanupResponse(BaseModel):
     """Response for cleanup operation"""

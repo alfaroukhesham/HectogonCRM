@@ -28,7 +28,7 @@ def decode_redis_value(value: bytes) -> str:
 
 def parse_cached_data(cached_data: Optional[Any]) -> Optional[dict]:
     """Parse cached data with error handling"""
-    if not cached_data:
+    if cached_data is None:
         return None
     
     try:

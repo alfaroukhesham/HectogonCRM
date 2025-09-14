@@ -74,12 +74,11 @@ class OrganizationService:
         if not org_data.slug or not org_data.slug.strip():
             raise InvalidOrganizationDataError(ORG_SLUG_REQUIRED_ERROR)
         
-        # Validate slug format
+        # Validate slug length and format
+        if len(org_data.slug) > MAX_SLUG_LENGTH:
+            raise InvalidSlugError(SLUG_TOO_LONG_ERROR)
         if not is_slug_format_valid(org_data.slug):
-            if len(org_data.slug) > MAX_SLUG_LENGTH:
-                raise InvalidSlugError(SLUG_TOO_LONG_ERROR)
-            else:
-                raise InvalidSlugError(INVALID_SLUG_FORMAT_ERROR)
+            raise InvalidSlugError(INVALID_SLUG_FORMAT_ERROR)
         
         # Validate created_by parameter
         if not validate_user_id(created_by):
@@ -96,11 +95,9 @@ class OrganizationService:
         except DuplicateKeyError:
             raise SlugExistsError(SLUG_EXISTS_ERROR.format(slug=org_data.slug))
         
-        org_dict["_id"] = str(result.inserted_id)
-        
+        org_id_str = str(result.inserted_id)
         logger.info(f"Created organization {org_data.name} with slug {org_data.slug} for user {created_by}")
-        
-        return Organization(**org_dict)
+        return await self.get_organization(org_id_str)
     
     async def get_organization(self, org_id: str) -> Optional[Organization]:
         """Get organization by ID."""
@@ -141,17 +138,27 @@ class OrganizationService:
         update_dict = create_update_dict(org_data.model_dump())
         if not update_dict:
             return await self.get_organization(org_id)
-        
+
+        # Validate slug updates and ensure unique index if needed
+        if "slug" in update_dict:
+            slug = update_dict["slug"]
+            if len(slug) > MAX_SLUG_LENGTH:
+                raise InvalidSlugError(SLUG_TOO_LONG_ERROR)
+            if not is_slug_format_valid(slug):
+                raise InvalidSlugError(INVALID_SLUG_FORMAT_ERROR)
+            await self._ensure_unique_index()
+
         try:
             result = await self.collection.update_one(
                 {"_id": ObjectId(org_id)},
                 {"$set": update_dict}
             )
-            
-            if result.modified_count:
+            if result.matched_count:
                 logger.info(f"Updated organization {org_id}")
                 return await self.get_organization(org_id)
             return None
+        except DuplicateKeyError:
+            raise SlugExistsError(SLUG_EXISTS_ERROR.format(slug=update_dict.get("slug")))
         except (PyMongoError, InvalidId) as e:
             logger.error(f"Error updating organization {org_id}: {e}")
             return None
@@ -161,35 +168,28 @@ class OrganizationService:
     
     async def delete_organization(self, org_id: str) -> bool:
         """Delete organization and all related data."""
+        if not ObjectId.is_valid(org_id):
+            logger.warning(f"Invalid organization ID format for delete: {org_id}")
+            return False
         try:
-            # Note: In production, you might want to soft delete or archive
             async with await self.db.client.start_session() as session:
                 async with session.start_transaction():
-                    # Delete organization
                     result = await self.collection.delete_one(
-                        {"_id": ObjectId(org_id)}, 
-                        session=session
+                        {"_id": ObjectId(org_id)},
+                        session=session,
                     )
-                    
                     membership_count = 0
                     if result.deleted_count > 0:
-                        # Delete all memberships for this organization
+                        membership_filter = {"organization_id": {"$in": [ObjectId(org_id), org_id]}}
                         membership_result = await self.membership_collection.delete_many(
-                            {"organization_id": org_id}, 
-                            session=session
+                            membership_filter, session=session
                         )
                         membership_count = membership_result.deleted_count
-                    
-                    if result.deleted_count > 0:
                         logger.info(f"Deleted organization {org_id} and {membership_count} memberships")
-                    
                     return result.deleted_count > 0
-        except (PyMongoError, InvalidId) as e:
+        except Exception as e:
             logger.error(f"Error deleting organization {org_id}: {e}")
             return False
-        except Exception as e:
-            logger.error(f"Unexpected error deleting organization {org_id}: {e}")
-            raise
     
     async def list_organizations(
         self, 

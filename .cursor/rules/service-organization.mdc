@@ -88,17 +88,35 @@ Update all imports throughout the codebase:
 ```python
 from app.services.cache_service import CacheService
 ```
-```
+
 
 ### 4. Update Dependency Injection
 Update `dependencies.py` and service factory functions:
 
 ```python
 # dependencies.py
-async def get_cache_service(
-    redis_client=Depends(get_redis_client)
-) -> CacheService:
+from typing import TYPE_CHECKING
+from fastapi import Depends
+if TYPE_CHECKING:
     from app.services.cache_service import CacheService
+
+async def get_cache_service(
+    redis_client = Depends(get_redis_client),
+) -> "CacheService":
+    from app.services.cache_service import CacheService  # local import to avoid cycles
+    return CacheService(redis_client)
+```
+
+**Alternative: Use `from __future__ import annotations`**
+```python
+# dependencies.py
+from __future__ import annotations
+from fastapi import Depends
+
+async def get_cache_service(
+    redis_client = Depends(get_redis_client),
+) -> CacheService:  # No quotes needed with future annotations
+    from app.services.cache_service import CacheService  # local import to avoid cycles
     return CacheService(redis_client)
 ```
 

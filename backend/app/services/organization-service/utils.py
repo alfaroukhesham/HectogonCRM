@@ -2,6 +2,7 @@
 
 import re
 import uuid
+import copy
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from bson import ObjectId
@@ -14,7 +15,7 @@ from .types import SlugString, OrganizationDict
 
 def validate_slug_format(slug: str) -> bool:
     """Validate organization slug format"""
-    return bool(re.match(SLUG_PATTERN, slug))
+    return bool(re.fullmatch(SLUG_PATTERN, slug))
 
 def clean_slug_string(text: str) -> str:
     """Clean text to create a valid slug"""
@@ -70,7 +71,7 @@ def create_organization_dict(
     if include_defaults:
         # Ensure settings are included with defaults if not provided
         if "settings" not in org_dict or org_dict["settings"] is None:
-            org_dict["settings"] = DEFAULT_ORG_SETTINGS.copy()
+            org_dict["settings"] = copy.deepcopy(DEFAULT_ORG_SETTINGS)
     
     return org_dict
 
@@ -80,6 +81,8 @@ def create_update_dict(update_data: Dict[str, Any]) -> Dict[str, Any]:
     update_dict = {k: v for k, v in update_data.items() if v is not None and k not in IMMUTABLE_FIELDS}
     if "name" in update_dict:
         update_dict["name"] = sanitize_organization_name(update_dict["name"])
+        if not validate_organization_name(update_dict["name"]):
+            raise ValueError("Organization name cannot be empty after sanitization.")
     if update_dict:  # Only add timestamp if there are actual updates
         update_dict["updated_at"] = datetime.now(timezone.utc)
     return update_dict
@@ -160,7 +163,7 @@ def prepare_organization_for_response(org_dict: Dict[str, Any]) -> Dict[str, Any
     
     # Ensure required fields exist
     if "settings" not in org_dict:
-        org_dict["settings"] = DEFAULT_ORG_SETTINGS.copy()
+        org_dict["settings"] = copy.deepcopy(DEFAULT_ORG_SETTINGS)
     
     return org_dict
 
@@ -173,7 +176,7 @@ def build_organization_search_query(
     
     if name_pattern:
         # Case-insensitive partial match on name
-        query["name"] = {"$regex": name_pattern, "$options": "i"}
+        query["name"] = {"$regex": re.escape(name_pattern), "$options": "i"}
     
     if created_by:
         query["created_by"] = created_by

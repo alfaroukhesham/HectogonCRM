@@ -409,11 +409,11 @@ class TestInviteService:
             {"_id": "expired", "count": 3}
         ]
         
-        mock_cursor = AsyncMock()
-        async def _aiter():
-            for doc in stats_data:
-                yield doc
-        mock_cursor.__aiter__.return_value = _aiter()
+        async def _agen(items):
+            for item in items:
+                yield item
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__.return_value = _agen(stats_data)
         mock_db.invites.aggregate.return_value = mock_cursor        # Act
         result = await invite_service.get_invite_stats()
 

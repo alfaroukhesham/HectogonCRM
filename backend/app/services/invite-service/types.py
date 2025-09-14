@@ -4,6 +4,12 @@ from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from enum import Enum
 from datetime import datetime
 
+# Back-compat for Python < 3.10
+try:
+    from typing import TypeAlias
+except ImportError:  # pragma: no cover
+    from typing_extensions import TypeAlias
+
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
     from app.core.email import EmailService
@@ -43,8 +49,8 @@ class EmailDeliveryStatus(str, Enum):
     NOT_REQUIRED = "not_required"
 
 # Type aliases for clarity
-DatabaseType = "AsyncIOMotorDatabase"
-EmailServiceType = "EmailService"
+DatabaseType: TypeAlias = "AsyncIOMotorDatabase"
+EmailServiceType: TypeAlias = "EmailService"
 InviteDict = Dict[str, Any]
 InviteList = List[Invite]
 UserId = str
@@ -114,7 +120,13 @@ class InvalidInviteDataError(InviteError):
 # Bulk operation types
 class BulkInviteOperation:
     """Bulk operation for invites"""
-    def __init__(self, operation: str, invites: List[Dict[str, Any]]):
+    def __init__(self, operation: InviteOperation, invites: List[InviteCreate]):
+        # Coerce from string when needed and validate
+        if isinstance(operation, str):
+            try:
+                operation = InviteOperation(operation)
+            except ValueError as e:
+                raise InvalidInviteDataError(f"Unknown bulk operation: {operation}") from e
         self.operation = operation
         self.invites = invites
 

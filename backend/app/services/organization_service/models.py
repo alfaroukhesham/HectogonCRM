@@ -1,8 +1,12 @@
 # organization-service/models.py
 
-from pydantic import BaseModel, field_validator, model_validator
+import re
+from pydantic import BaseModel, field_validator, model_validator, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+# Precompiled regex for slug validation
+SLUG_RE = re.compile(r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$')
 
 # Re-export the main models from app.models for convenience
 from app.models.organization import (
@@ -36,7 +40,7 @@ class OrganizationListRequest(BaseModel):
     sort_by: Optional[str] = "created_at"
     sort_order: Optional[str] = "desc"
     
-    @validator('limit')
+    @field_validator('limit')
     def limit_must_be_positive(cls, v):
         if v <= 0:
             raise ValueError('Limit must be positive')
@@ -44,7 +48,7 @@ class OrganizationListRequest(BaseModel):
             raise ValueError('Limit cannot exceed 1000')
         return v
     
-    @validator('skip')
+    @field_validator('skip')
     def skip_must_be_non_negative(cls, v):
         if v < 0:
             raise ValueError('Skip must be non-negative')
@@ -73,7 +77,6 @@ class OrganizationSearchFilters(BaseModel):
     member_count_max: Optional[int] = None
     
     @field_validator('member_count_min', 'member_count_max')
-    @classmethod
     def validate_member_counts(cls, v):
         if v is not None and v < 0:
             raise ValueError('Member count must be non-negative')
@@ -115,7 +118,6 @@ class OrganizationSettingsUpdate(BaseModel):
     custom_branding: Optional[Dict[str, Any]] = None
     
     @field_validator('max_members')
-    @classmethod
     def validate_max_members(cls, v):
         if v is not None and v <= 0:
             raise ValueError('max_members must be positive')
@@ -142,20 +144,19 @@ class OrganizationCreationRequest(BaseModel):
     settings: Optional[OrganizationSettings] = None
     created_by: str
     
-    @validator('name')
+    @field_validator('name')
     def name_must_not_be_empty(cls, v):
         if not v or not v.strip():
             raise ValueError('Organization name cannot be empty')
         return v.strip()
     
-    @validator('slug')
+    @field_validator('slug')
     def slug_must_be_valid(cls, v):
-        import re
         if not v or not v.strip():
             raise ValueError('Organization slug cannot be empty')
         
         v = v.strip().lower()
-        if not re.match(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$', v):
+        if not SLUG_RE.match(v):
             raise ValueError('Slug must start and end with alphanumeric characters, contain only lowercase letters, numbers, and hyphens')
         
         if len(v) > 80:

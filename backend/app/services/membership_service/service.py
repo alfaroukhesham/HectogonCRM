@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from bson.errors import InvalidId
 import logging
+from pymongo.errors import DuplicateKeyError
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -53,10 +54,25 @@ class MembershipService:
     async def create_membership(
         self, 
         membership_data: MembershipCreate,
-        session=None
+        session=None,
+        allow_existing: bool = False
     ) -> Membership:
-        """Create a new membership."""
+        """Create a new membership.
+        
+        Args:
+            membership_data: Membership data to create
+            session: Database session for transactions
+            allow_existing: If True, return existing membership instead of raising error
+                           (useful for idempotent operations like invite acceptance)
+        
+        Returns:
+            Membership: Created or existing membership
+            
+        Raises:
+            DuplicateMembershipError: If membership exists and allow_existing=False
+        """
         membership_dict = None
+        inserted = False
         try:
             # Validate user exists
             try:
@@ -83,18 +99,42 @@ class MembershipService:
             )
             
             if existing:
-                raise DuplicateMembershipError(ALREADY_MEMBER_ERROR)
+                if allow_existing:
+                    # Return existing membership for idempotent operations
+                    logger.info(f"Membership already exists for user {membership_data.user_id} in organization {membership_data.organization_id}")
+                    return Membership(**convert_membership_dict_to_response(existing))
+                else:
+                    raise DuplicateMembershipError(ALREADY_MEMBER_ERROR)
             
             membership_dict = membership_data.model_dump()
             membership_dict.update(create_timestamp_fields())
             
-            result = await self.collection.insert_one(membership_dict, session=session)
-            membership_dict["_id"] = str(result.inserted_id)
+            try:
+                result = await self.collection.insert_one(membership_dict, session=session)
+                membership_dict["_id"] = str(result.inserted_id)
+                inserted = True
+            except DuplicateKeyError:
+                # Handles race conditions despite prior existence check
+                if allow_existing:
+                    # Race condition: another process created the membership
+                    # Fetch and return the existing membership
+                    existing = await self.collection.find_one(
+                        build_membership_query(membership_data.user_id, membership_data.organization_id), 
+                        session=session
+                    )
+                    if existing:
+                        logger.info(f"Membership created by another process for user {membership_data.user_id} in organization {membership_data.organization_id}")
+                        return Membership(**convert_membership_dict_to_response(existing))
+                    else:
+                        # This shouldn't happen, but handle gracefully
+                        raise DuplicateMembershipError(ALREADY_MEMBER_ERROR)
+                else:
+                    raise DuplicateMembershipError(ALREADY_MEMBER_ERROR)
             
             return Membership(**membership_dict)
         finally:
             # Invalidate cache outside of transaction to avoid blocking
-            if membership_dict and self.cache_service:
+            if inserted and self.cache_service:
                 try:
                     await self.cache_service.invalidate_user_membership(
                         membership_data.user_id, 
@@ -169,11 +209,16 @@ class MembershipService:
                 {"$set": update_dict}
             )
             
-            if result.modified_count:
-                # Get the updated membership to invalidate the correct user's cache
+            if result.matched_count:
+                # Fetch the document regardless of modification for consistent return semantics
                 updated_membership = await self.get_membership_by_id(membership_id)
                 if updated_membership and self.cache_service:
-                    await self.cache_service.invalidate_user_membership(updated_membership.user_id, updated_membership.organization_id)
+                    try:
+                        await self.cache_service.invalidate_user_membership(
+                            updated_membership.user_id, updated_membership.organization_id
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to invalidate cache after membership update: {e}")
                 return updated_membership
             return None
         except InvalidId:
@@ -189,7 +234,12 @@ class MembershipService:
             
             # Invalidate user membership cache if deletion was successful
             if result.deleted_count > 0 and membership_to_delete and self.cache_service:
-                await self.cache_service.invalidate_user_membership(membership_to_delete.user_id, membership_to_delete.organization_id)
+                try:
+                    await self.cache_service.invalidate_user_membership(
+                        membership_to_delete.user_id, membership_to_delete.organization_id
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate cache after membership deletion: {e}")
                 
             return result.deleted_count > 0
         except InvalidId:
