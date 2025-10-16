@@ -42,8 +42,18 @@ backend/
 
 ## Quick Start
 
+### Prerequistes
+
+- install python 3.12
+
 ### 1. Install Dependencies
 ```bash
+# Create new virtual environment with Python 3.12
+python -m venv venv
+
+# Activate the new environment
+source venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
